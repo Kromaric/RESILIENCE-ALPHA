@@ -34,6 +34,15 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
     app = FastAPI(
         title="Orbe — auth-service",
         version="0.1.0",
+        description=(
+            "Authentification des clients Orbe (JWT RS256 valables 15 min) et validation des "
+            "clés d'API partenaires. Exposé par le WAF sous `/api/auth`. "
+            'Erreurs : `{"detail": {"code", "message"}}`. Voir CADRAGE §4.2.'
+        ),
+        openapi_tags=[
+            {"name": "Authentification", "description": "Connexion et profil du client"},
+            {"name": "Partenaires", "description": "Clés d'API des partenaires"},
+        ],
         lifespan=lifespan,
         docs_url="/docs" if settings.enable_docs else None,
         redoc_url=None,

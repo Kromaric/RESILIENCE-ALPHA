@@ -3,6 +3,15 @@ from typing import Literal
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
 
+class ErrorDetail(BaseModel):
+    code: str = Field(examples=["insufficient_balance"])
+    message: str = Field(examples=["Solde insuffisant."])
+
+
+class ErrorOut(BaseModel):
+    detail: ErrorDetail
+
+
 class CardIn(BaseModel):
     # SecretStr : le numéro et le CVC n'apparaissent ni dans les repr ni dans les erreurs
     number: SecretStr
@@ -13,6 +22,26 @@ class CardIn(BaseModel):
 
 
 class PayIn(BaseModel):
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "recipient": "06 12 34 56 77",
+                    "amount_cents": 1250,
+                    "currency": "EUR",
+                    "description": "Ciné",
+                    "card": {
+                        "number": "4242 4242 4242 4242",
+                        "exp_month": 12,
+                        "exp_year": 2030,
+                        "cvc": "123",
+                        "holder": "Camille Test",
+                    },
+                }
+            ]
+        }
+    }
+
     recipient: str | None = Field(default=None, min_length=3, max_length=254)
     recipient_qr: str | None = Field(default=None, min_length=16, max_length=64)
     amount_cents: int = Field(ge=1)
@@ -90,6 +119,14 @@ class PayoutOut(BaseModel):
 
 
 class RequestIn(BaseModel):
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"payer": "camille@orbe.test", "amount_cents": 800, "description": "Covoiturage"}
+            ]
+        }
+    }
+
     payer: str = Field(min_length=3, max_length=254)
     amount_cents: int = Field(ge=1)
     description: str | None = Field(default=None, max_length=140)

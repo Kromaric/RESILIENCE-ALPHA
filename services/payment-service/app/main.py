@@ -73,6 +73,25 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
     app = FastAPI(
         title="Orbe — payment-service",
         version="0.1.0",
+        description=(
+            "Paiements entre clients Orbe : transferts payés par carte de test, demandes "
+            "d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF "
+            "sous `/api/payments`.\n\n"
+            "- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service.\n"
+            "- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) "
+            "obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n"
+            "- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n"
+            "- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` "
+            "(refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\n"
+            "Voir CADRAGE §4.3."
+        ),
+        openapi_tags=[
+            {"name": "Paiements", "description": "Envoyer et rembourser"},
+            {"name": "Historique", "description": "Opérations envoyées et reçues"},
+            {"name": "Compte", "description": "Solde et retraits vers le compte lié"},
+            {"name": "Demandes d'argent", "description": "Demander, payer, refuser, annuler"},
+            {"name": "QR code", "description": "Recevoir de l'argent par QR code"},
+        ],
         lifespan=lifespan,
         docs_url="/docs" if settings.enable_docs else None,
         redoc_url=None,

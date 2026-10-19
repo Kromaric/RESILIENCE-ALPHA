@@ -12,7 +12,14 @@ from app.db import get_session, utcnow
 from app.logging_setup import log_event
 from app.metrics import ACCOUNT_LOCKS, API_KEY_FAILURES, LOGIN_FAILURES, LOGINS
 from app.models import ApiKey, Client
-from app.schemas import LoginRequest, MeResponse, TokenResponse, VerifyResponse, error
+from app.schemas import (
+    ErrorOut,
+    LoginRequest,
+    MeResponse,
+    TokenResponse,
+    VerifyResponse,
+    error,
+)
 from app.security import hash_api_key, mask_phone, normalize_email
 
 router = APIRouter()
@@ -44,7 +51,17 @@ async def register_failure(session: AsyncSession, client_id: str, request: Reque
     await session.commit()
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    tags=["Authentification"],
+    summary="Se connecter",
+    responses={
+        401: {"model": ErrorOut, "description": "Email ou mot de passe incorrect"},
+        423: {"model": ErrorOut, "description": "Compte bloqué (en-tête Retry-After)"},
+        429: {"model": ErrorOut, "description": "Trop de tentatives depuis cette IP"},
+    },
+)
 async def login(
     body: LoginRequest, request: Request, session: AsyncSession = Depends(get_session)
 ) -> TokenResponse:
@@ -123,7 +140,13 @@ async def current_claims(
         raise unauthorized from None
 
 
-@router.get("/me", response_model=MeResponse)
+@router.get(
+    "/me",
+    response_model=MeResponse,
+    tags=["Authentification"],
+    summary="Mon profil",
+    responses={401: {"model": ErrorOut, "description": "Jeton absent, invalide ou expiré"}},
+)
 async def me(
     claims: dict[str, Any] = Depends(current_claims),
     session: AsyncSession = Depends(get_session),
@@ -143,7 +166,13 @@ async def me(
     )
 
 
-@router.get("/verify", response_model=VerifyResponse)
+@router.get(
+    "/verify",
+    response_model=VerifyResponse,
+    tags=["Partenaires"],
+    summary="Vérifier une clé d'API partenaire",
+    responses={401: {"model": ErrorOut, "description": "Clé absente, inconnue ou désactivée"}},
+)
 async def verify_api_key(
     request: Request,
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orbe — documentation des API</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css">
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #fafafa; }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 20px;
+             background: #0e5a6b; color: #fff; }
+    header h1 { margin: 0 12px 0 0; font-size: 18px; font-weight: 600; }
+    header button { border: 1px solid #dcecef; background: transparent; color: #fff; border-radius: 999px;
+                    padding: 6px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+    header button[aria-pressed="true"] { background: #dcecef; color: #0a4552; }
+    header small { margin-left: auto; opacity: .85; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Orbe — API</h1>
+    <nav id="services" aria-label="Service"></nav>
+    <small>Spécifications générées par <code>scripts/export_openapi.py</code></small>
+  </header>
+  <div id="swagger-ui"></div>
+
+  <!-- specs.js définit window.ORBE_SPECS : la page fonctionne aussi ouverte depuis le disque -->
+  <script src="specs.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+  <script>
+    const specs = window.ORBE_SPECS || {};
+    const nav = document.getElementById("services");
+
+    function show(name) {
+      SwaggerUIBundle({
+        spec: specs[name],
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        docExpansion: "list",
+        defaultModelsExpandDepth: 0,
+        persistAuthorization: true,
+      });
+      for (const button of nav.querySelectorAll("button")) {
+        button.setAttribute("aria-pressed", String(button.dataset.service === name));
+      }
+      history.replaceState(null, "", `#${name}`);
+    }
+
+    for (const name of Object.keys(specs)) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.service = name;
+      button.textContent = name;
+      button.addEventListener("click", () => show(name));
+      nav.appendChild(button);
+    }
+
+    const wanted = location.hash.slice(1).split("/")[0];
+    show(specs[wanted] ? wanted : Object.keys(specs)[0]);
+  </script>
+</body>
+</html>
