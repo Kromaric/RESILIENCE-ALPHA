@@ -1,7 +1,7 @@
 # PROJECT RESILIENCE-ALPHA — Cadrage technique
 
 > Workshop EPSI BAC+5 — Octobre 2026 — Consortium G\<n\>
-> Statut : **brouillon v0.2** — à valider par l'équipe
+> Statut : **brouillon v0.3** — modèle métier « Orbe » (transferts entre clients) intégré
 > Périmètre : architecture, composants, interfaces, données, observabilité, détection, remédiation, sécurité technique, déploiement.
 > La gouvernance (EBIOS RM, PCA/PRA, NIS2/DORA) fait l'objet d'un document séparé.
 
@@ -11,7 +11,7 @@
 
 | # | Critère | Mesure |
 |---|---|---|
-| T1 | Une transaction fictive aboutit en nominal | `POST /pay` → `201`, transaction `authorized` en base |
+| T1 | Un transfert fictif aboutit en nominal | `POST /pay` → `201`, transaction `authorized`, solde du bénéficiaire crédité |
 | T2 | Le scénario SC-01, lancé depuis le PC Attaquant, dégrade le service | `probe_transaction_success` passe à 0, latence p95 et 5xx en hausse |
 | T3 | L'anomalie est détectée par le modèle ML | `anomaly_score{target="payment-service"}` > seuil |
 | T4 | La remédiation s'exécute sans intervention | Incident `verified` dans `remediation-engine`, étapes horodatées |
@@ -139,6 +139,7 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 | `/` | frontend | statique |
 | `/api/auth/*` | auth-service:8001 | réécriture du préfixe |
 | `/api/payments/*` | upstream `payment` (a, b) | `max_fails=2 fail_timeout=10s` |
+| `= /api/status` (GET uniquement) | remediation-engine:8003 `/status/public` | État public de la plateforme (§4.6) |
 | autres | `404` | |
 
 - Une instance de paiement en échec est **sortie automatiquement** de la répartition (checks passifs Nginx), l'autre continue de servir.
@@ -152,36 +153,82 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 |---|---|---|
 | `POST /login` | `{ "email", "password" }` | `200 { "access_token", "token_type": "bearer", "expires_in": 900 }` · `401` |
 | `GET /verify` | en-tête `X-API-Key` | `200 { "partner", "scopes": [] }` · `401` |
+| `GET /me` | `Authorization: Bearer` | `200 { "client_id", "email", "phone_masked": "+33 6 •• •• •• 78", "display_name" }` |
 | `GET /health/live` · `/health/ready` | — | `200` / `503` |
 | `GET /metrics` | — | format Prometheus |
 
-- JWT **RS256**, durée 15 min, clé privée lue dans Vault, clé publique distribuée aux services de paiement.
+- JWT **RS256**, durée 15 min, claims `sub` (client_id) et `email`, clé privée lue dans Vault, clé publique distribuée aux services de paiement.
 - Mots de passe : `argon2`. Clés d'API stockées hachées.
-- Limitation des tentatives de connexion par compte et par IP ; échecs comptés dans `auth_login_failures_total`.
+- **5 échecs de connexion → compte bloqué 10 min** (`failed_logins`, `locked_until`) + limitation par IP ; échecs comptés dans `auth_login_failures_total`.
+- La maquette annonce une expiration « après 15 min d'inactivité » : avec un JWT fixe, c'est 15 min après la connexion. Libellé à corriger, ou jeton de rafraîchissement à ajouter si le temps le permet.
 
 ### 4.3 payment-service (8002) — 2 instances
 
+**Modèle métier (« Stripe local »)** : un client envoie à un autre client le montant de son choix. Le payeur paie avec une **carte de test** ; le bénéficiaire est crédité sur son **solde Orbe**, qu'il peut rembourser ou retirer vers un compte bancaire fictif. Aucune intégration Stripe : tout est simulé dans le service.
+
+```
+Carte de test du payeur ──► payment-service ──► solde du bénéficiaire ──► retrait fictif (payout)
+                                                        │
+                                                        └──► remboursement vers la carte du payeur
+```
+
+**Endpoints** (tous avec `Authorization: Bearer`, sauf santé et métriques)
+
 | Endpoint | Entrée | Sortie |
 |---|---|---|
-| `POST /pay` | `Authorization: Bearer`, `Idempotency-Key: <uuid>`, `{ "merchant_id", "amount_cents", "currency" }` | `201 { "transaction_id", "status" }` · `200` (rejeu même clé) · `409` (même clé, corps différent) · `422` · `503` |
-| `GET /transactions/{id}` | `Authorization: Bearer` | `200` · `404` (absente ou pas au client) |
+| `POST /pay` | `Idempotency-Key`, `{ "recipient": "<email ou téléphone>", "amount_cents", "currency": "EUR", "description", "card": { "number", "exp_month", "exp_year", "cvc", "holder" } }` | `201 { "reference", "status", "decline_reason", "amount_cents", "card": { "brand", "last4" }, "created_at" }` · `200` (rejeu même clé) · `409` (même clé, corps différent) · `422` · `503` |
+| `GET /transactions` | `?status=&direction=sent\|received&limit=20&cursor=` | `200 { "items": [ { "reference", "type", "direction", "counterparty", "description", "card_last4", "amount_cents", "status", "created_at" } ], "next_cursor" }` |
+| `GET /transactions/{reference}` | — | `200` · `404` (absente ou étrangère au client) |
+| `POST /transactions/{reference}/refund` | `Idempotency-Key` | `201 { "reference" (du remboursement), "status" }` · `403` (pas le bénéficiaire) · `409` (déjà remboursée) · `422` (solde insuffisant) |
+| `GET /account` | — | `200 { "balance_cents", "currency", "payout_account": { "label", "iban_last4" } }` |
+| `POST /payouts` | `Idempotency-Key`, `{ "amount_cents" }` | `201 { "reference", "status", "amount_cents" }` · `422` (solde insuffisant) |
 | `GET /health/live` · `/health/ready` | — | `ready` = ping DB + pool disponible |
 | `GET /metrics` | — | |
 
+**Désignation du bénéficiaire** — un seul champ, email **ou** téléphone :
+- normalisation avant recherche : email en minuscules sans espaces ; téléphone en E.164 (`06 12 34 56 78` → `+33612345678`) ;
+- le bénéficiaire doit avoir un compte Orbe ; transfert à soi-même interdit ;
+- réponse neutre `decline_reason: "recipient_not_found"` et limitation des essais (anti-énumération) ; **pas** d'endpoint de recherche de bénéficiaire.
+
+**Cartes de test** (aucune carte réelle acceptée)
+
+| Numéro | Résultat |
+|---|---|
+| `4242 4242 4242 4242` | `authorized` |
+| `4000 0000 0000 0002` | `declined` — `card_declined` |
+| `4000 0000 0000 0069` | `declined` — `card_expired` |
+| `4000 0000 0000 9995` | `declined` — `insufficient_funds` |
+| autre numéro, Luhn invalide ou date passée | `422` |
+
+**Données de carte** : seuls `card_brand` et `card_last4` sont stockés. Le numéro complet, le CVC et le titulaire ne sont **jamais** stockés ni journalisés (filtre explicite dans le logger).
+
+**Contrôles serveur** (le montant vient du client)
+- `amount_cents` entier, 1 ≤ montant ≤ 500 000 (5 000 €) ; devise `EUR` uniquement ;
+- limite de 10 paiements par minute et par client ;
+- remboursement : par le **bénéficiaire** uniquement, total, une seule fois, si son solde le permet ;
+- retrait : montant ≤ solde.
+
 **Traitement d'un paiement**
-1. Vérification locale du JWT (clé publique).
-2. Insertion `pending` avec `idempotency_key` unique (transaction SQL).
-3. Appel simulé au « réseau d'autorisation » fictif (latence 50–150 ms, **connexion DB conservée** — rend le pool de connexions réaliste comme ressource critique).
-4. Règles fictives (plafond, marchand actif) → `authorized` ou `declined`.
-5. Réponse.
+1. Vérification locale du JWT (clé publique) et validation du corps.
+2. Résolution du bénéficiaire.
+3. Insertion `pending` avec `idempotency_key` unique.
+4. Appel simulé au « réseau d'autorisation » fictif selon la carte de test (latence 50–150 ms, **connexion DB conservée** — rend le pool de connexions réaliste comme ressource critique).
+5. Si accepté : passage à `authorized` **et** crédit du solde du bénéficiaire dans **la même transaction SQL** (`SELECT … FOR UPDATE` sur le solde). Sinon : `declined` + `decline_reason`.
+6. Réponse. Un refus de carte est un `201` avec `status: "declined"` : la transaction existe, elle est refusée.
+
+**Référence publique** : `tx_` + 8 caractères hexadécimaux (ex. `tx_9c01e7aa`), unique ; l'UUID reste interne.
+
+**Invariant de cohérence** (vérifié après chaque remédiation, §7.5), pour chaque client :
+
+`solde = Σ paiements reçus (authorized + refunded) − Σ remboursements effectués − Σ retraits effectués`
 
 **Paramètres** : pool SQLAlchemy `pool_size=10`, `max_overflow=0`, `pool_timeout=2s` ; MariaDB `max_connections=60`.
 **Au démarrage** : réconciliation — toute transaction `pending` depuis plus de 30 s passe en `failed` (motif `recovery`).
 
 ### 4.4 probe — sonde de transaction synthétique (8006)
 
-- Toutes les 10 s : `login` → `pay` → `GET /transactions/{id}` **à travers le WAF** (vrai chemin utilisateur).
-- Compte de test dédié, IP en liste blanche du blocage dynamique.
+- Toutes les 10 s : `login` → `pay` (carte `4242…`, 1 €) → `GET /transactions/{reference}` **à travers le WAF** (vrai chemin utilisateur).
+- Deux comptes de test dédiés (payeur et bénéficiaire de la sonde), marqués `is_probe`, **exclus** des historiques et soldes affichés aux clients ; IP en liste blanche du blocage dynamique.
 - Expose `probe_transaction_success` (0/1), `probe_transaction_duration_seconds`, `probe_step_failures_total{step}`.
 - Fournit aussi `POST /run` (appelé par le moteur pour la vérification, §7.5).
 
@@ -201,6 +248,7 @@ Détail du modèle en §6.
 | `POST /webhook/alert` | Alertmanager uniquement, `Bearer` | Réception des alertes |
 | `GET /incidents` · `GET /incidents/{id}` | dashboard (lecture) | Suivi des incidents |
 | `GET /status` | dashboard (lecture) | État agrégé des services (via Prometheus `up` + sonde) |
+| `GET /status/public` | WAF (`/api/status`), lecture | État minimal pour le frontend : `{ "platform": "operational\|incident\|remediation\|recovered", "payments_enabled", "updated_at", "services": [ { "name", "state" } ], "incident": { "detected_at", "recovered_at", "verified_by" } \| null }` — servi par le moteur pour rester disponible quand `payment-service` tombe ; aucune donnée interne |
 | `GET /health` · `GET /metrics` | interne | `remediation_incidents_total{type,status}`, `remediation_duration_seconds` |
 
 Détail en §7.
@@ -223,33 +271,75 @@ Détail en §7.
 - Modèle : Qwen2.5 3B / Llama 3.2 3B sur l'hôte, ou Llama 3.1 8B Q4 sur le PC IA (`OLLAMA_BASE_URL`).
 - **Aucun** accès au moteur de remédiation, au socket Docker ni à la base.
 
+### 4.9 Frontend « Orbe » — données par écran et corrections de la maquette
+
+Maquette de référence : `frontend/maquette/orbe-maquette.html`.
+
+| Écran | Appels API |
+|---|---|
+| Connexion | `POST /api/auth/login` |
+| Paiement (transfert) | `GET /api/auth/me`, `POST /api/payments/pay`, `GET /api/status` (toutes les 3 s) |
+| Historique | `GET /api/payments/transactions`, `POST /api/payments/transactions/{reference}/refund` |
+| Solde et retrait | `GET /api/payments/account`, `POST /api/payments/payouts` |
+| Paiement pendant l'incident | `GET /api/status` (toutes les 3 s) : bandeau, état des services, bouton « Payer » actif seulement si `payments_enabled` |
+
+**Corrections à apporter à la maquette**
+
+| Élément de la maquette | Correction |
+|---|---|
+| Commande `CMD-2026-0142` et récapitulatif (Licence Pro, Support…) | Remplacer par un formulaire de **transfert** : bénéficiaire (email ou téléphone), montant, libellé |
+| « Carte vérifiée par auth-service » | « Session vérifiée » — auth-service authentifie le client, il ne vérifie pas les cartes |
+| Noms `payment-api`, `payments-db` | `payment-service`, `mariadb` |
+| Historique : colonnes Référence, Date, Description, Carte, Montant, Statut | Ajouter le **sens** (envoyé / reçu) et le **correspondant** ; bouton « Rembourser » sur les paiements reçus `authorized` ; statuts « Échouée » et « Effectué » |
+| « Sessions expirent après 15 min d'inactivité » | « Sessions valables 15 min » (sauf ajout d'un jeton de rafraîchissement) |
+| Transaction de vérification `tx_9c01e7aa` visible dans l'historique du client | Les transactions de la sonde sont exclues des vues client ; la référence n'apparaît que dans le bandeau « Service rétabli » |
+| Absent | Écran **Solde et retrait** : solde, compte de retrait fictif (`•••• 1234`), bouton « Retirer » |
+
 ---
 
 ## 5. Modèle de données (MariaDB)
 
 ```sql
-clients        (id PK, email UNIQUE, password_hash, created_at)
-merchants      (id PK, name, active)
-api_keys       (id PK, partner_name, key_hash UNIQUE, scopes JSON, active, created_at)
-transactions   (id CHAR(36) PK, client_id FK, merchant_id FK,
-                amount_cents INT, currency CHAR(3),
-                status ENUM('pending','authorized','declined','failed'),
-                failure_reason VARCHAR(64) NULL,
-                idempotency_key CHAR(36) UNIQUE, request_hash CHAR(64),
-                created_at, updated_at,
-                INDEX (status, created_at))
+clients          (id CHAR(36) PK, email UNIQUE, phone UNIQUE  -- E.164
+                  , display_name, password_hash,
+                  balance_cents BIGINT NOT NULL DEFAULT 0 CHECK (balance_cents >= 0),
+                  failed_logins INT DEFAULT 0, locked_until DATETIME NULL,
+                  is_probe BOOL DEFAULT FALSE, created_at)
+payout_accounts  (id PK, client_id FK UNIQUE, label, iban_last4 CHAR(4))   -- IBAN fictif, jamais complet
+api_keys         (id PK, partner_name, key_hash UNIQUE, scopes JSON, active, created_at)
+transactions     (id CHAR(36) PK, reference CHAR(11) UNIQUE,              -- tx_xxxxxxxx
+                  type ENUM('payment','refund','payout'),
+                  payer_id FK NULL, recipient_id FK NULL,
+                  parent_id FK NULL,                                       -- refund → paiement d'origine
+                  amount_cents INT NOT NULL CHECK (amount_cents > 0), currency CHAR(3),
+                  description VARCHAR(140) NULL,
+                  card_brand VARCHAR(16) NULL, card_last4 CHAR(4) NULL,
+                  status ENUM('pending','authorized','declined','failed','refunded','completed'),
+                  decline_reason VARCHAR(32) NULL,
+                  idempotency_key CHAR(36) UNIQUE, request_hash CHAR(64),
+                  created_at, updated_at,
+                  INDEX (payer_id, created_at), INDEX (recipient_id, created_at),
+                  INDEX (status, created_at))
 ```
+
+| `type` | payer | recipient | Statuts possibles |
+|---|---|---|---|
+| `payment` | client qui paie | client bénéficiaire | `pending` → `authorized` \| `declined` \| `failed` ; `authorized` → `refunded` |
+| `refund` | bénéficiaire du paiement | payeur d'origine | `pending` → `completed` \| `failed` |
+| `payout` | client qui retire | — | `pending` → `completed` \| `failed` |
+
+**Libellés côté front** : `authorized` = Autorisée · `pending` = En attente · `declined` = Refusée · `failed` = Échouée · `refunded` = Remboursée · `completed` = Effectué.
 
 **Comptes MariaDB (moindre privilège)**
 
 | Compte | Droits |
 |---|---|
-| `auth_svc` | `SELECT` sur `clients`, `api_keys` |
-| `payment_svc` | `SELECT` sur `clients`, `merchants` ; `SELECT, INSERT, UPDATE` sur `transactions` |
-| `remediation_ro` | `SELECT` sur `transactions` (contrôle de cohérence) |
+| `auth_svc` | `SELECT` sur `clients`, `api_keys` ; `UPDATE (failed_logins, locked_until)` sur `clients` |
+| `payment_svc` | `SELECT` sur `clients`, `payout_accounts` ; `UPDATE (balance_cents)` sur `clients` ; `SELECT, INSERT, UPDATE` sur `transactions` |
+| `remediation_ro` | `SELECT` sur `transactions`, `clients (id, balance_cents, is_probe)` (contrôle de cohérence) |
 | `exporter` | `PROCESS, REPLICATION CLIENT` |
 
-**Données** : jeu fictif généré par Faker (`scripts/seed.py`). Aucun numéro de carte, même fictif : le moyen de paiement est un identifiant opaque.
+**Données** : jeu fictif généré par Faker (`scripts/seed.py`) : clients avec email et téléphone fictifs (`+33 6…`, domaine `.test`), comptes de retrait fictifs, historique de transactions couvrant tous les statuts. Cartes : uniquement les cartes de test du §4.3, dont seuls la marque et les 4 derniers chiffres sont stockés.
 **Sauvegarde** : `mariadb-dump` toutes les 5 min vers un volume dédié, rétention 24 h.
 
 ---
@@ -266,7 +356,8 @@ transactions   (id CHAR(36) PK, client_id FK, merchant_id FK,
 | `http_requests_total{service,handler,method,status}` | instrumentator FastAPI |
 | `http_request_duration_seconds_bucket{service,handler}` | instrumentator FastAPI |
 | `http_requests_inprogress{service}` | instrumentator FastAPI |
-| `payment_transactions_total{status}` | payment-service |
+| `payment_transactions_total{type,status}` | payment-service |
+| `payment_declines_total{reason}` | payment-service |
 | `payment_db_pool_in_use` · `payment_db_pool_size` | payment-service |
 | `auth_login_failures_total` | auth-service |
 | `probe_transaction_success` · `probe_transaction_duration_seconds` | probe |
@@ -410,7 +501,8 @@ L'incident passe à `verified` **uniquement si** :
 - [ ] `POST probe:8006/run` × 3 → 3 succès consécutifs (login → pay → lecture, via le WAF) ;
 - [ ] latence p95 sous la valeur de référence ;
 - [ ] `anomaly_score` sous le seuil ;
-- [ ] cohérence des données (compte `remediation_ro`) : 0 transaction `pending` de plus de 30 s, 0 doublon d'`idempotency_key`.
+- [ ] cohérence des données (compte `remediation_ro`) : 0 transaction `pending` de plus de 30 s, 0 doublon d'`idempotency_key`, **invariant des soldes respecté pour chaque client** (§4.3) ;
+- [ ] `GET /api/status` repasse à `recovered` puis `operational`, `payments_enabled: true`.
 
 Sinon → niveau suivant, puis `failed`.
 
@@ -596,3 +688,5 @@ Pas de déploiement depuis la CI : les runners GitHub ne joignent pas le PC Hôt
 - [ ] Faisabilité cAdvisor et Snort sous WSL2
 - [ ] Seuil du score d'anomalie (après `ml/evaluate.py`)
 - [ ] SC-02 : go / no-go
+- [ ] Jeton de rafraîchissement (session « 15 min d'inactivité ») : oui / non
+- [ ] Mise à jour de la maquette selon §4.9
