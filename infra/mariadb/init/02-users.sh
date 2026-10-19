@@ -1,31 +1,53 @@
 #!/bin/bash
 # Orbe — comptes MariaDB à moindre privilège (voir CADRAGE §5).
-# Ce script est « sourcé » par l'entrypoint de l'image officielle MariaDB au premier
-# démarrage : la fonction docker_process_sql est donc disponible.
-# Les mots de passe viennent de l'environnement du conteneur (jamais du dépôt).
+# Exécuté par l'entrypoint de l'image officielle MariaDB au premier démarrage, soit
+# « sourcé » (fichier non exécutable), soit lancé comme script (fichier exécutable,
+# cas d'un montage depuis Windows) : les deux cas sont gérés.
+#
+# Mots de passe : variable MARIADB_<COMPTE>_PASSWORD_FILE (secret Docker, recommandé)
+# ou, à défaut, MARIADB_<COMPTE>_PASSWORD. Jamais dans le dépôt.
 
-: "${MARIADB_AUTH_SVC_PASSWORD:?MARIADB_AUTH_SVC_PASSWORD manquant}"
-: "${MARIADB_PAYMENT_SVC_PASSWORD:?MARIADB_PAYMENT_SVC_PASSWORD manquant}"
-: "${MARIADB_REMEDIATION_RO_PASSWORD:?MARIADB_REMEDIATION_RO_PASSWORD manquant}"
-: "${MARIADB_EXPORTER_PASSWORD:?MARIADB_EXPORTER_PASSWORD manquant}"
+secret() {
+	local file_var="${1}_FILE"
+	if [ -n "${!file_var:-}" ]; then
+		cat "${!file_var}"
+	else
+		printf '%s' "${!1:?$1 ou $file_var manquant}"
+	fi
+}
 
-docker_process_sql <<-EOSQL
-	CREATE USER IF NOT EXISTS 'auth_svc'@'%' IDENTIFIED BY '${MARIADB_AUTH_SVC_PASSWORD}';
+run_sql() {
+	if declare -F docker_process_sql > /dev/null; then
+		docker_process_sql "$@"
+	else
+		MYSQL_PWD="${MARIADB_ROOT_PASSWORD:?MARIADB_ROOT_PASSWORD manquant}" \
+			mariadb --protocol=socket -uroot "$@"
+	fi
+}
+
+AUTH_SVC_PASSWORD="$(secret MARIADB_AUTH_SVC_PASSWORD)" || exit 1
+PAYMENT_SVC_PASSWORD="$(secret MARIADB_PAYMENT_SVC_PASSWORD)" || exit 1
+REMEDIATION_RO_PASSWORD="$(secret MARIADB_REMEDIATION_RO_PASSWORD)" || exit 1
+EXPORTER_PASSWORD="$(secret MARIADB_EXPORTER_PASSWORD)" || exit 1
+
+run_sql <<-EOSQL
+	CREATE USER IF NOT EXISTS 'auth_svc'@'%' IDENTIFIED BY '${AUTH_SVC_PASSWORD}';
 	GRANT SELECT ON orbe.clients TO 'auth_svc'@'%';
 	GRANT UPDATE (failed_logins, locked_until) ON orbe.clients TO 'auth_svc'@'%';
 	GRANT SELECT ON orbe.api_keys TO 'auth_svc'@'%';
 
-	CREATE USER IF NOT EXISTS 'payment_svc'@'%' IDENTIFIED BY '${MARIADB_PAYMENT_SVC_PASSWORD}';
+	CREATE USER IF NOT EXISTS 'payment_svc'@'%' IDENTIFIED BY '${PAYMENT_SVC_PASSWORD}';
 	GRANT SELECT ON orbe.clients TO 'payment_svc'@'%';
-	GRANT UPDATE (balance_cents) ON orbe.clients TO 'payment_svc'@'%';
+	GRANT UPDATE (balance_cents, qr_token) ON orbe.clients TO 'payment_svc'@'%';
 	GRANT SELECT ON orbe.payout_accounts TO 'payment_svc'@'%';
 	GRANT SELECT, INSERT, UPDATE ON orbe.transactions TO 'payment_svc'@'%';
+	GRANT SELECT, INSERT, UPDATE ON orbe.payment_requests TO 'payment_svc'@'%';
 
-	CREATE USER IF NOT EXISTS 'remediation_ro'@'%' IDENTIFIED BY '${MARIADB_REMEDIATION_RO_PASSWORD}';
+	CREATE USER IF NOT EXISTS 'remediation_ro'@'%' IDENTIFIED BY '${REMEDIATION_RO_PASSWORD}';
 	GRANT SELECT ON orbe.transactions TO 'remediation_ro'@'%';
 	GRANT SELECT (id, balance_cents, is_probe) ON orbe.clients TO 'remediation_ro'@'%';
 
-	CREATE USER IF NOT EXISTS 'exporter'@'%' IDENTIFIED BY '${MARIADB_EXPORTER_PASSWORD}' WITH MAX_USER_CONNECTIONS 3;
+	CREATE USER IF NOT EXISTS 'exporter'@'%' IDENTIFIED BY '${EXPORTER_PASSWORD}' WITH MAX_USER_CONNECTIONS 3;
 	GRANT PROCESS, REPLICATION CLIENT, SLAVE MONITOR ON *.* TO 'exporter'@'%';
 
 	FLUSH PRIVILEGES;

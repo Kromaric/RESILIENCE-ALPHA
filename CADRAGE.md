@@ -164,7 +164,7 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 
 ### 4.3 payment-service (8002) — 2 instances
 
-**Modèle métier (« Stripe local »)** : un client envoie à un autre client le montant de son choix. Le payeur paie avec une **carte de test** ; le bénéficiaire est crédité sur son **solde Orbe**, qu'il peut rembourser ou retirer vers un compte bancaire fictif. Aucune intégration Stripe : tout est simulé dans le service.
+**Modèle métier (« Stripe local »)** : un client envoie à un autre client le montant de son choix, ou lui **demande** de l'argent. Le payeur paie avec une **carte de test** ; le bénéficiaire est crédité sur son **solde Orbe**, qu'il peut rembourser ou retirer vers son **compte lié** (compte bancaire fictif). Le bénéficiaire se désigne par email, téléphone ou **QR code**. Aucune intégration Stripe : tout est simulé dans le service.
 
 ```
 Carte de test du payeur ──► payment-service ──► solde du bénéficiaire ──► retrait fictif (payout)
@@ -176,19 +176,34 @@ Carte de test du payeur ──► payment-service ──► solde du bénéficia
 
 | Endpoint | Entrée | Sortie |
 |---|---|---|
-| `POST /pay` | `Idempotency-Key`, `{ "recipient": "<email ou téléphone>", "amount_cents", "currency": "EUR", "description", "card": { "number", "exp_month", "exp_year", "cvc", "holder" } }` | `201 { "reference", "status", "decline_reason", "amount_cents", "card": { "brand", "last4" }, "created_at" }` · `200` (rejeu même clé) · `409` (même clé, corps différent) · `422` · `503` |
+| `POST /pay` | `Idempotency-Key`, `{ "recipient": "<email ou téléphone>"` **ou** `"recipient_qr": "<jeton>", "amount_cents", "currency": "EUR", "description", "card": { "number", "exp_month", "exp_year", "cvc", "holder" } }` | `201 { "reference", "status", "decline_reason", "amount_cents", "card": { "brand", "last4" }, "created_at" }` · `200` (rejeu même clé) · `409` (même clé, corps différent) · `422` · `503` |
 | `GET /transactions` | `?status=&direction=sent\|received&limit=20&cursor=` | `200 { "items": [ { "reference", "type", "direction", "counterparty", "description", "card_last4", "amount_cents", "status", "created_at" } ], "next_cursor" }` |
 | `GET /transactions/{reference}` | — | `200` · `404` (absente ou étrangère au client) |
 | `POST /transactions/{reference}/refund` | `Idempotency-Key` | `201 { "reference" (du remboursement), "status" }` · `403` (pas le bénéficiaire) · `409` (déjà remboursée) · `422` (solde insuffisant) |
 | `GET /account` | — | `200 { "balance_cents", "currency", "payout_account": { "label", "iban_last4" } }` |
 | `POST /payouts` | `Idempotency-Key`, `{ "amount_cents" }` | `201 { "reference", "status", "amount_cents" }` · `422` (solde insuffisant) |
+| `POST /requests` | `Idempotency-Key`, `{ "payer": "<email ou téléphone>", "amount_cents", "description" }` | `201 { "reference": "rq_…", "status", "failure_reason", "expires_at" }` |
+| `GET /requests` | `?role=incoming\|outgoing&status=` | `200 { "items": [ { "reference", "role", "counterparty", "amount_cents", "description", "status", "created_at", "expires_at" } ] }` |
+| `POST /requests/{reference}/pay` | `Idempotency-Key`, `{ "card": {…} }` (par le payeur demandé) | comme `POST /pay` ; la demande passe à `paid` si le paiement est autorisé |
+| `POST /requests/{reference}/decline` | — (par le payeur demandé) | `200` → `declined` |
+| `POST /requests/{reference}/cancel` | — (par le demandeur) | `200` → `cancelled` |
+| `GET /qr` | — | `200 { "qr_token", "payload": "orbe://pay?to=<jeton>", "display_name" }` |
+| `POST /qr/rotate` | — | `200` nouveau jeton (l'ancien QR devient invalide) |
 | `GET /health/live` · `/health/ready` | — | `ready` = ping DB + pool disponible |
 | `GET /metrics` | — | |
 
 **Désignation du bénéficiaire** — un seul champ, email **ou** téléphone :
 - normalisation avant recherche : email en minuscules sans espaces ; téléphone en E.164 (`06 12 34 56 78` → `+33612345678`) ;
 - le bénéficiaire doit avoir un compte Orbe ; transfert à soi-même interdit ;
-- réponse neutre `decline_reason: "recipient_not_found"` et limitation des essais (anti-énumération) ; **pas** d'endpoint de recherche de bénéficiaire.
+- réponse neutre `decline_reason: "recipient_not_found"` et limitation des essais (anti-énumération) ; **pas** d'endpoint de recherche de bénéficiaire ;
+- **QR code** : jeton opaque aléatoire par client (`clients.qr_token`), révocable par `POST /qr/rotate` ; le QR ne contient ni email ni téléphone ;
+- les comptes de la sonde (`is_probe`) ne sont joignables que par la sonde.
+
+**Demandes d'argent** (« Demander ») :
+- le demandeur désigne le payeur par email ou téléphone ; demande à soi-même interdite ;
+- payeur introuvable → `201` avec `status: "failed"`, `failure_reason: "recipient_not_found"` (même réponse neutre que le paiement) ;
+- statuts : `pending` → `paid` \| `declined` (par le payeur) \| `cancelled` (par le demandeur) \| `expired` (après 7 jours) ;
+- au plus 20 demandes `pending` émises par client ; payer une demande reprend exactement le montant demandé.
 
 **Cartes de test** (aucune carte réelle acceptée)
 
@@ -213,7 +228,7 @@ Carte de test du payeur ──► payment-service ──► solde du bénéficia
 2. Résolution du bénéficiaire.
 3. Insertion `pending` avec `idempotency_key` unique.
 4. Appel simulé au « réseau d'autorisation » fictif selon la carte de test (latence 50–150 ms, **connexion DB conservée** — rend le pool de connexions réaliste comme ressource critique).
-5. Si accepté : passage à `authorized` **et** crédit du solde du bénéficiaire dans **la même transaction SQL** (`SELECT … FOR UPDATE` sur le solde). Sinon : `declined` + `decline_reason`.
+5. Si accepté : passage à `authorized` **et** crédit du solde du bénéficiaire dans **la même transaction SQL** (mises à jour atomiques, `UPDATE … SET balance_cents = balance_cents + :montant`). Sinon : `declined` + `decline_reason`.
 6. Réponse. Un refus de carte est un `201` avec `status: "declined"` : la transaction existe, elle est refusée.
 
 **Référence publique** : `tx_` + 8 caractères hexadécimaux (ex. `tx_9c01e7aa`), unique ; l'UUID reste interne.
@@ -273,11 +288,14 @@ Détail en §7.
 
 ### 4.9 Frontend « Orbe » — données par écran et corrections de la maquette
 
-Maquette de référence : `frontend/maquette/orbe-maquette.html`.
+Maquette de référence : `frontend/maquette/orbe-accueil-mobile.html` (application mobile 390 × 844 ; seul l'écran « 2 · Accueil » est fourni, les écrans Envoyer, Recevoir et Activité sont référencés mais pas encore livrés).
 
 | Écran | Appels API |
 |---|---|
 | Connexion | `POST /api/auth/login` |
+| Accueil | `GET /api/auth/me` (prénom), `GET /api/payments/account` (solde, compte lié), `GET /api/payments/transactions?limit=4` (activité récente), `GET /api/status` |
+| Demander | `POST /api/payments/requests`, `GET /api/payments/requests` |
+| Mon QR / Recevoir | `GET /api/payments/qr`, `POST /api/payments/qr/rotate` |
 | Paiement (transfert) | `GET /api/auth/me`, `POST /api/payments/pay`, `GET /api/status` (toutes les 3 s) |
 | Historique | `GET /api/payments/transactions`, `POST /api/payments/transactions/{reference}/refund` |
 | Solde et retrait | `GET /api/payments/account`, `POST /api/payments/payouts` |
@@ -294,6 +312,9 @@ Maquette de référence : `frontend/maquette/orbe-maquette.html`.
 | « Sessions expirent après 15 min d'inactivité » | « Sessions valables 15 min » (sauf ajout d'un jeton de rafraîchissement) |
 | Transaction de vérification `tx_9c01e7aa` visible dans l'historique du client | Les transactions de la sonde sont exclues des vues client ; la référence n'apparaît que dans le bandeau « Service rétabli » |
 | Absent | Écran **Solde et retrait** : solde, compte de retrait fictif (`•••• 1234`), bouton « Retirer » |
+| Accueil — « Compte lié : l'argent part de ce compte » | L'argent part de la **carte de test** ; le compte lié reçoit les **retraits**. Libellé : « Vos retraits arrivent sur ce compte » |
+| Accueil — solde absent | Afficher le **solde Orbe** (`balance_cents`) au-dessus du compte lié |
+| Accueil — activité récente (initiales, nom, note, heure, montant signé, Envoyé / Reçu) | Correspond à `counterparty`, `description`, `created_at`, `amount_cents` + `direction` de `GET /transactions` ; les initiales sont calculées par le front |
 
 ---
 
@@ -304,7 +325,16 @@ clients          (id CHAR(36) PK, email UNIQUE, phone UNIQUE  -- E.164
                   , display_name, password_hash,
                   balance_cents BIGINT NOT NULL DEFAULT 0 CHECK (balance_cents >= 0),
                   failed_logins INT DEFAULT 0, locked_until DATETIME NULL,
+                  qr_token CHAR(22) UNIQUE,                               -- jeton opaque du QR « Recevoir »
                   is_probe BOOL DEFAULT FALSE, created_at)
+payment_requests (id CHAR(36) PK, reference CHAR(11) UNIQUE,               -- rq_xxxxxxxx
+                  requester_id FK, payer_id FK NULL, transaction_id FK NULL,
+                  amount_cents INT CHECK (> 0), currency CHAR(3), description VARCHAR(140),
+                  status ENUM('pending','paid','declined','cancelled','expired','failed'),
+                  failure_reason VARCHAR(32) NULL,
+                  idempotency_key CHAR(36), request_hash CHAR(64),
+                  UNIQUE (requester_id, idempotency_key),
+                  created_at, expires_at, updated_at)
 payout_accounts  (id PK, client_id FK UNIQUE, label, iban_last4 CHAR(4))   -- IBAN fictif, jamais complet
 api_keys         (id PK, partner_name, key_hash UNIQUE, scopes JSON, active, created_at)
 transactions     (id CHAR(36) PK, reference CHAR(11) UNIQUE,              -- tx_xxxxxxxx
@@ -316,7 +346,8 @@ transactions     (id CHAR(36) PK, reference CHAR(11) UNIQUE,              -- tx_
                   card_brand VARCHAR(16) NULL, card_last4 CHAR(4) NULL,
                   status ENUM('pending','authorized','declined','failed','refunded','completed'),
                   decline_reason VARCHAR(32) NULL,
-                  idempotency_key CHAR(36) UNIQUE, request_hash CHAR(64),
+                  idempotency_key CHAR(36), request_hash CHAR(64),
+                  UNIQUE (payer_id, idempotency_key), UNIQUE (parent_id),  -- un remboursement par paiement
                   created_at, updated_at,
                   INDEX (payer_id, created_at), INDEX (recipient_id, created_at),
                   INDEX (status, created_at))
@@ -335,7 +366,7 @@ transactions     (id CHAR(36) PK, reference CHAR(11) UNIQUE,              -- tx_
 | Compte | Droits |
 |---|---|
 | `auth_svc` | `SELECT` sur `clients`, `api_keys` ; `UPDATE (failed_logins, locked_until)` sur `clients` |
-| `payment_svc` | `SELECT` sur `clients`, `payout_accounts` ; `UPDATE (balance_cents)` sur `clients` ; `SELECT, INSERT, UPDATE` sur `transactions` |
+| `payment_svc` | `SELECT` sur `clients`, `payout_accounts` ; `UPDATE (balance_cents, qr_token)` sur `clients` ; `SELECT, INSERT, UPDATE` sur `transactions` et `payment_requests` |
 | `remediation_ro` | `SELECT` sur `transactions`, `clients (id, balance_cents, is_probe)` (contrôle de cohérence) |
 | `exporter` | `PROCESS, REPLICATION CLIENT` |
 
