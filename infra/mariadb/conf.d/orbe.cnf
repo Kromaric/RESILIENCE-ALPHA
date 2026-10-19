@@ -1,0 +1,10 @@
+[mariadb]
+# Toutes les dates en UTC
+default-time-zone = '+00:00'
+# Plafond global de connexions (CADRAGE §4.3) : 2 instances payment-service × 10 + marge
+max_connections = 60
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+# Journal des requêtes lentes (exploité par mysqld-exporter et l'investigation)
+slow_query_log = 1
+long_query_time = 0.5

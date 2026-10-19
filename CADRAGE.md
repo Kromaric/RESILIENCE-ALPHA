@@ -26,7 +26,7 @@
 
 | Couche | Technologie | Remarque |
 |---|---|---|
-| Backend | **Python 3.12 / FastAPI**, Uvicorn, SQLAlchemy 2 (async) + `asyncmy` | Tous les services backend |
+| Backend | **Python 3.12 / FastAPI**, Uvicorn, SQLAlchemy 2 (async) + `aiomysql` | Tous les services backend |
 | Frontend / dashboard | **React + Vite + Tailwind CSS** | Build statique servi par Nginx |
 | Base de données | **MariaDB 11.4 LTS** | |
 | Conteneurs | **Docker Desktop (WSL2) + Docker Compose v2** | |

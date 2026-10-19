@@ -1,0 +1,9 @@
+# Fichiers exécutés dans des conteneurs Linux : toujours en LF,
+# même sur un poste Windows avec core.autocrlf=true.
+*.sh        text eol=lf
+*.cnf       text eol=lf
+*.sql       text eol=lf
+Dockerfile  text eol=lf
+*.py        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
