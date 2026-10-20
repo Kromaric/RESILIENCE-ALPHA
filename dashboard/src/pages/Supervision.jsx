@@ -1,16 +1,25 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import { phases } from '../data/supervision'
+import { getSeries, resources } from '../data/metrics'
+import { getSteps, getLogs } from '../data/incident'
 import Badge from '../components/Badge'
 import SectionTitle from '../components/SectionTitle'
 import PhaseToggle from '../components/supervision/PhaseToggle'
 import IncidentBanner from '../components/supervision/IncidentBanner'
 import KpiCard from '../components/supervision/KpiCard'
 import ServiceCard from '../components/supervision/ServiceCard'
+import ChartPanel from '../components/supervision/ChartPanel'
+import ResourcesPanel from '../components/supervision/ResourcesPanel'
+import RemediationChain from '../components/supervision/RemediationChain'
+import LogViewer from '../components/supervision/LogViewer'
+import { LatencyChart, AnomalyChart, TransactionsChart } from '../components/supervision/Charts'
 
 export default function Supervision() {
   const [phase, setPhase] = useState('apres')
   const data = phases[phase]
+  const series = useMemo(() => getSeries(phase), [phase])
+  const logs = useMemo(() => getLogs(phase), [phase])
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -54,6 +63,32 @@ export default function Supervision() {
         {data.services.map((s) => (
           <ServiceCard key={s.name} {...s} />
         ))}
+      </div>
+
+      <SectionTitle right="Tableau « Resilience-Alpha / Paiement » · fenêtre 30 min · rafraîchi toutes les 5 s">
+        Panneaux Grafana
+      </SectionTitle>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <ChartPanel title="Latence p95 — payment-api" source="Prometheus">
+          <LatencyChart {...series} />
+        </ChartPanel>
+        <ChartPanel title="Score d'anomalie — modèle AIOps" source="Isolation Forest · seuil 0,80">
+          <AnomalyChart {...series} />
+        </ChartPanel>
+        <ChartPanel title="Transactions par minute" source="Prometheus">
+          <TransactionsChart {...series} />
+        </ChartPanel>
+        <ChartPanel title="Ressources du PC Hôte" source="cAdvisor · node-exporter">
+          <ResourcesPanel items={resources[phase]} />
+        </ChartPanel>
+      </div>
+
+      <div className="mt-3 mb-8 grid gap-3 lg:grid-cols-2">
+        <RemediationChain
+          steps={getSteps(phase)}
+          incidentId={phase === 'avant' ? null : 'INC-0007'}
+        />
+        <LogViewer logs={logs} />
       </div>
     </div>
   )
