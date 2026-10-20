@@ -126,7 +126,8 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 - Docker Desktop publie sur `0.0.0.0` par défaut → **bind IP explicite obligatoire**.
 - Le bind sur `192.168.137.1` échoue si le hotspot n'est pas actif → démarrer le hotspot **avant** `compose up` (vérifié par `deploy.yml`).
 - Pare-feu Windows : entrant autorisé uniquement sur 443 pour le profil du hotspot.
-- TLS : certificat auto-signé généré au déploiement (CA locale distribuée au PC Attaquant et à la sonde).
+- TLS : certificat généré au déploiement par une **CA locale (`mkcert`)**, installée sur les appareils de démo (PC, téléphone), le PC Attaquant et la sonde.
+- **Nom de domaine `orbe.test`** → `192.168.137.1`, déclaré dans le fichier `hosts` des appareils de démo. Obligatoire pour WebAuthn, qui refuse une adresse IP comme identifiant de site (§4.2). Le certificat du WAF couvre `orbe.test`.
 
 ---
 
@@ -149,17 +150,37 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 
 ### 4.2 auth-service (8001)
 
+> **Évolution validée (v2, pas encore codée)** : double authentification **mot de passe + passkey biométrique (WebAuthn)**, sessions révocables et applications clientes. Modèle de données : `docs/mcd.md`.
+
+**Authentification forte (DSP2 : deux facteurs parmi trois)** — le mot de passe est ce que l'on sait ; la passkey, déverrouillée par Face ID / Windows Hello, est ce que l'on possède et ce que l'on est. La biométrie est vérifiée **sur l'appareil** : le serveur ne reçoit ni image ni gabarit, seulement une signature, et ne stocke que la clé publique de la passkey (aucune donnée sensible au sens de l'art. 9 RGPD).
+
+```
+1. POST /login                         email + mot de passe
+   ← 200 { "mfa_required": true, "session_id", "webauthn_options" }    session « en_attente_2fa »
+2. navigator.credentials.get()         l'appareil vérifie le visage et signe le défi
+3. POST /login/passkey                 { "session_id", "assertion" }
+   ← 200 { "access_token", "expires_in": 900 }                          session « active »
+```
+
 | Endpoint | Entrée | Sortie |
 |---|---|---|
-| `POST /login` | `{ "email", "password" }` | `200 { "access_token", "token_type": "bearer", "expires_in": 900 }` · `401` |
-| `GET /verify` | en-tête `X-API-Key` | `200 { "partner", "scopes": [] }` · `401` |
+| `POST /login` | `{ "email", "password" }` + en-tête `X-Client-Id` (application) | `200 { "mfa_required", "session_id", "webauthn_options" }` · `401` · `423` · `429` |
+| `POST /login/passkey` | `{ "session_id", "assertion" }` | `200 { "access_token", "token_type": "bearer", "expires_in": 900 }` · `401` |
+| `POST /passkeys/register/options` · `POST /passkeys/register` | session active | enregistrement d'une passkey (un appareil) |
+| `GET /passkeys` · `DELETE /passkeys/{id}` | session active | gestion des appareils |
+| `POST /logout` | session active | révocation de la session |
 | `GET /me` | `Authorization: Bearer` | `200 { "client_id", "email", "phone_masked": "+33 6 •• •• •• 78", "display_name" }` |
+| `GET /verify` | en-tête `X-API-Key` | `200 { "partner", "scopes": [] }` · `401` |
 | `GET /health/live` · `/health/ready` | — | `200` / `503` |
 | `GET /metrics` | — | format Prometheus |
 
-- JWT **RS256**, durée 15 min, claims `sub` (client_id) et `email`, clé privée lue dans Vault, clé publique distribuée aux services de paiement.
-- Mots de passe : `argon2`. Clés d'API stockées hachées.
-- **5 échecs de connexion → compte bloqué 10 min** (`failed_logins`, `locked_until`) + limitation par IP ; échecs comptés dans `auth_login_failures_total`.
+- Bibliothèques : `webauthn` (Duo Labs) côté serveur, `@simplewebauthn/browser` côté React. Identifiant de site (RP ID) : **`orbe.test`** (§3.4) ; vérification utilisateur exigée (`userVerification: "required"`).
+- JWT **RS256**, durée 15 min, claims `sub` (client_id), `email`, `jti` (= identifiant de session), `amr` (`["pwd", "passkey"]`) ; clé privée lue dans Vault, clé publique distribuée aux services de paiement.
+- Mots de passe : `argon2id`. **5 échecs → compte bloqué 10 min** (`failed_logins`, `locked_until`) + limitation par IP. Les tentatives sont tracées dans les journaux (Loki / SOC), pas en base.
+- Compteur de signatures de la passkey vérifié à chaque connexion : un compteur qui recule signale une passkey clonée → refus et alerte SOC.
+- **Compatibilité web** : WebAuthn est un standard du navigateur, utilisable depuis le front web responsive sans application native (Safari iOS 16+ → Face ID, Chrome Android → déverrouillage de l'appareil, Windows Hello sur PC). Le front détecte la prise en charge avec `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()`. Dans le dossier, parler de « biométrie de l'appareil » : WebAuthn garantit la vérification de l'utilisateur, pas le type de biométrie.
+- **Alternative étudiée, reportée** : reconnaissance faciale côté serveur avec un modèle pré-entraîné (InsightFace / ArcFace). Écartée pour la première version : empreintes faciales de vraies personnes (donnée sensible, RGPD art. 9, contraire au cadre fictif du sujet), fraude par simple photo sans détection du vivant, 300 à 500 Mo de RAM en plus. Si elle est reprise : facteur **en plus** de WebAuthn, consentement explicite, photo supprimée après calcul, empreinte chiffrée (clé dans Vault), détection du vivant, seuil mesuré.
+- **Exception de la sonde** : la sonde (CLIENT_API de type `service`, clé d'API dédiée) ouvre ses sessions sans passkey et n'agit que sur les comptes `is_probe`. Risque résiduel documenté.
 - La maquette annonce une expiration « après 15 min d'inactivité » : avec un JWT fixe, c'est 15 min après la connexion. Libellé à corriger, ou jeton de rafraîchissement à ajouter si le temps le permet.
 
 ### 4.3 payment-service (8002) — 2 instances
@@ -218,7 +239,8 @@ Carte de test du payeur ──► payment-service ──► solde du bénéficia
 **Données de carte** : seuls `card_brand` et `card_last4` sont stockés. Le numéro complet, le CVC et le titulaire ne sont **jamais** stockés ni journalisés (filtre explicite dans le logger).
 
 **Contrôles serveur** (le montant vient du client)
-- `amount_cents` entier, 1 ≤ montant ≤ 500 000 (5 000 €) ; devise `EUR` uniquement ;
+- `amount_cents` entier, 1 ≤ montant ≤ **50 000 (500 €)** ; devise `EUR` uniquement ; frais nuls ;
+- opération acceptée seulement dans une **session active et non révoquée** (v2 : liste de révocation lue avec un cache court, pour ne pas consommer une connexion du pool à chaque paiement) ;
 - limite de 10 paiements par minute et par client ;
 - remboursement : par le **bénéficiaire** uniquement, total, une seule fois, si son solde le permet ;
 - retrait : montant ≤ solde.
@@ -233,9 +255,24 @@ Carte de test du payeur ──► payment-service ──► solde du bénéficia
 
 **Référence publique** : `tx_` + 8 caractères hexadécimaux (ex. `tx_9c01e7aa`), unique ; l'UUID reste interne.
 
-**Invariant de cohérence** (vérifié après chaque remédiation, §7.5), pour chaque client :
+**Comptabilité en partie double (v2, pas encore codée)** : toute opération autorisée ou effectuée génère **deux écritures** de même montant (débit, crédit), dans la même transaction SQL ; une opération refusée n'en génère aucune.
 
-`solde = Σ paiements reçus (authorized + refunded) − Σ remboursements effectués − Σ retraits effectués`
+| Opération | Débit | Crédit |
+|---|---|---|
+| Paiement autorisé | contrepartie « Encaissements carte » | compte Orbe du bénéficiaire |
+| Remboursement | compte Orbe du bénéficiaire | contrepartie « Encaissements carte » |
+| Retrait | compte Orbe du client | contrepartie « Retraits » |
+
+**Contrôles de cohérence** (vérifiés après chaque remédiation, §7.5) :
+- pour chaque opération, Σ débits = Σ crédits ;
+- pour chaque compte, `solde = Σ crédits − Σ débits` ; solde d'un compte client ≥ 0.
+
+v1 (code actuel) : `solde = Σ paiements reçus (authorized + refunded) − Σ remboursements effectués − Σ retraits effectués`.
+
+**Autres évolutions v2 (pas encore codées)** :
+- **Comptes de contrepartie** (« Encaissements carte », « Retraits ») : comptes Orbe sans titulaire qui représentent l'extérieur, pour que chaque écriture ait son vis-à-vis.
+- **Plusieurs comptes liés** par client, dont un par défaut : `GET/POST/DELETE /payout-accounts`, `POST /payout-accounts/{id}/default` ; `POST /payouts` accepte un `payout_account_id` facultatif (sinon le compte par défaut).
+- **Contacts** : `GET /contacts`, `POST /contacts` (`{ "contact": "<email ou téléphone>", "alias" }`), `DELETE /contacts/{id}` ; seuls des clients Orbe peuvent être ajoutés, réponse neutre si le contact est inconnu (anti-énumération).
 
 **Paramètres** : pool SQLAlchemy `pool_size=10`, `max_overflow=0`, `pool_timeout=2s` ; MariaDB `max_connections=60`.
 **Au démarrage** : réconciliation — toute transaction `pending` depuis plus de 30 s passe en `failed` (motif `recovery`).
@@ -243,6 +280,7 @@ Carte de test du payeur ──► payment-service ──► solde du bénéficia
 ### 4.4 probe — sonde de transaction synthétique (8006)
 
 - Toutes les 10 s : `login` → `pay` (carte `4242…`, 1 €) → `GET /transactions/{reference}` **à travers le WAF** (vrai chemin utilisateur).
+- v2 : la sonde ne peut pas utiliser de passkey ; elle se connecte avec la clé d'API de son CLIENT_API de type `service` (exception documentée, §4.2).
 - Deux comptes de test dédiés (payeur et bénéficiaire de la sonde), marqués `is_probe`, **exclus** des historiques et soldes affichés aux clients ; IP en liste blanche du blocage dynamique.
 - Expose `probe_transaction_success` (0/1), `probe_transaction_duration_seconds`, `probe_step_failures_total{step}`.
 - Fournit aussi `POST /run` (appelé par le moteur pour la vérification, §7.5).
@@ -319,6 +357,8 @@ Maquette de référence : `frontend/maquette/orbe-accueil-mobile.html` (applicat
 ---
 
 ## 5. Modèle de données (MariaDB)
+
+> **Modèle cible v2** : MCD et MLD dans [`docs/mcd.md`](docs/mcd.md) — ajoute `sessions`, `passkeys`, `client_apis` (remplace `api_keys`), `ledger_accounts` (porte le solde) et `ledger_entries` (écritures), et `transactions.session_id`. Le schéma ci-dessous est la **v1, actuellement codée**.
 
 ```sql
 clients          (id CHAR(36) PK, email UNIQUE, phone UNIQUE  -- E.164
@@ -575,7 +615,7 @@ Sinon → niveau suivant, puis `failed`.
 |---|---|
 | **Catégorie** | Confidentialité / intégrité |
 | **Signaux** | Journaux d'authentification, règles CRS, alertes IDS, modèle `auth-service` |
-| **Réponse** `pb-isolate-rotate-redeploy.yml` | Déconnexion du conteneur de `net-app` → export des journaux (preuves) → rotation de la clé JWT et des identifiants DB dans Vault → invalidation des JWT → redéploiement depuis l'image de référence → vérification |
+| **Réponse** `pb-isolate-rotate-redeploy.yml` | Déconnexion du conteneur de `net-app` → export des journaux (preuves) → **révocation des sessions** concernées (v2 : table `sessions`) et, si la clé JWT est en cause, rotation de la clé JWT et des identifiants DB dans Vault → redéploiement depuis l'image de référence → vérification |
 
 À engager seulement si SC-01 est stable.
 
@@ -721,3 +761,8 @@ Pas de déploiement depuis la CI : les runners GitHub ne joignent pas le PC Hôt
 - [ ] SC-02 : go / no-go
 - [ ] Jeton de rafraîchissement (session « 15 min d'inactivité ») : oui / non
 - [ ] Mise à jour de la maquette selon §4.9
+- [ ] Appareils de démo compatibles WebAuthn biométrique (téléphone Face ID / Android, ou PC Windows Hello visage) et repli prévu (PIN Windows Hello, clé de sécurité)
+- [ ] `orbe.test` + CA `mkcert` installée sur ces appareils : à tester dès le premier jour
+- [ ] Résolution de `orbe.test` depuis un téléphone sur le hotspot (DNS du hotspot ou nom de type `sslip.io`) et confiance de la CA `mkcert` sur Android
+- [ ] Reconnaissance faciale par modèle pré-entraîné : à réévaluer après la v2 (§4.2)
+- [ ] Application de la v2 du modèle (`docs/mcd.md`) au schéma SQL, à auth-service et à payment-service
