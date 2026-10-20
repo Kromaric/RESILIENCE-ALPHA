@@ -44,3 +44,9 @@ chroma/
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- Images matricielles : pas de PNG dans le dépôt (SVG uniquement) ---
+*.png
+
+# --- Archives de secrets ---
+secrets*.zip

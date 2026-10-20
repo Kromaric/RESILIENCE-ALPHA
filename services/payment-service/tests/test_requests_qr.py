@@ -5,7 +5,7 @@ from conftest import OK_CARD
 from sqlalchemy import update
 
 from app.db import utcnow
-from app.models import Client, PaymentRequest
+from app.models import PaymentRequest
 
 
 def ask(client, auth, requester, payer_contact, amount=800, **body):
@@ -45,7 +45,7 @@ def test_payer_sees_the_request_and_pays_it(add_client, client, auth, db):
     assert paid.status_code == 201
     assert paid.json()["status"] == "authorized"
     assert paid.json()["amount_cents"] == 800
-    assert db.get(Client, nathan.id).balance_cents == 800
+    assert db.balance(nathan) == 800
     outgoing = client.get("/requests?role=outgoing", headers=auth(nathan)).json()["items"]
     assert outgoing[0]["status"] == "paid"
 
@@ -59,7 +59,7 @@ def test_a_request_cannot_be_paid_twice(add_client, client, auth, db):
 
     assert again.status_code == 409
     assert again.json()["detail"]["code"] == "request_not_pending"
-    assert db.get(Client, nathan.id).balance_cents == 800
+    assert db.balance(nathan) == 800
 
 
 def test_a_declined_card_leaves_the_request_payable(add_client, client, auth):
@@ -168,7 +168,7 @@ def test_qr_token_identifies_the_recipient(add_client, client, auth, pay, db):
     assert qr["display_name"] == "Léa Martin"
     assert len(qr["qr_token"]) == 22
     assert paid.json()["status"] == "authorized"
-    assert db.get(Client, lea.id).balance_cents == 1500
+    assert db.balance(lea) == 1500
 
 
 def test_qr_token_is_stable_until_rotated(add_client, client, auth, pay):

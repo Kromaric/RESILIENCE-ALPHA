@@ -4,6 +4,8 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -11,7 +13,7 @@ from app.config import Settings
 from app.db import make_engine
 from app.logging_setup import configure_logging, log_event, request_id_var
 from app.ratelimit import SlidingWindowLimiter
-from app.routes import auth, health
+from app.routes import auth, health, passkeys
 from app.routes.auth import client_ip
 from app.security import PasswordVerifier, TokenService
 
@@ -35,12 +37,17 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
         title="Orbe — auth-service",
         version="0.1.0",
         description=(
-            "Authentification des clients Orbe (JWT RS256 valables 15 min) et validation des "
-            "clés d'API partenaires. Exposé par le WAF sous `/api/auth`. "
+            "Authentification forte des clients Orbe : mot de passe puis passkey WebAuthn "
+            "(biométrie vérifiée par l'appareil), sessions révocables (JWT RS256 de 15 min), "
+            "applications clientes et clés d'API partenaires. Exposé par le WAF sous `/api/auth`. "
             'Erreurs : `{"detail": {"code", "message"}}`. Voir CADRAGE §4.2.'
         ),
         openapi_tags=[
-            {"name": "Authentification", "description": "Connexion et profil du client"},
+            {
+                "name": "Authentification",
+                "description": "Connexion en deux étapes (mot de passe, puis passkey) et profil",
+            },
+            {"name": "Passkeys", "description": "Appareils WebAuthn (Face ID, Windows Hello)"},
             {"name": "Partenaires", "description": "Clés d'API des partenaires"},
         ],
         lifespan=lifespan,
@@ -60,6 +67,26 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
     )
     app.state.passwords = PasswordVerifier(settings.hash_concurrency)
     app.state.login_limiter = SlidingWindowLimiter(settings.login_rate_per_ip)
+    app.state.register_limiter = SlidingWindowLimiter(settings.register_rate_per_ip)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # Format d'erreur commun ; la valeur reçue (« input ») n'est jamais renvoyée :
+        # elle peut contenir un mot de passe
+        fields = [
+            {"field": ".".join(str(part) for part in err["loc"][1:]), "message": err["msg"]}
+            for err in exc.errors()
+        ]
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "code": "validation_error",
+                    "message": "Requête invalide.",
+                    "fields": fields,
+                }
+            },
+        )
 
     @app.middleware("http")
     async def access_log(request: Request, call_next):
@@ -86,6 +113,7 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
             request_id_var.reset(token)
 
     app.include_router(auth.router)
+    app.include_router(passkeys.router)
     app.include_router(health.router)
 
     Instrumentator(excluded_handlers=["/metrics", "/health/.*"]).instrument(app).expose(

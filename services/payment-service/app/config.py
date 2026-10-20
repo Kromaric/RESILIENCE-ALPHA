@@ -33,12 +33,17 @@ class Settings(BaseSettings):
     jwt_audience: str = "orbe"
 
     # Règles métier
-    max_amount_cents: int = 500_000  # 5 000 €
+    max_amount_cents: int = 50_000  # 500 € par opération
     # Paiements (et créations de demandes) par minute et par client ; 0 désactive la limite.
     # Interagit avec le scénario SC-01 : valeur à régler avec l'équipe Red Team.
     pay_rate_per_client: int = 10
     max_pending_requests: int = 20
     request_ttl_days: int = 7
+    max_payout_accounts: int = 5
+    max_contacts: int = 200
+    # Statut de session (révocation) mis en cache pour ne pas consommer une connexion du pool
+    # à chaque requête : une révocation prend effet en au plus ce délai
+    session_cache_seconds: float = 5.0
 
     # Simulation du réseau d'autorisation (connexion DB conservée pendant l'attente)
     authorization_min_ms: int = 50

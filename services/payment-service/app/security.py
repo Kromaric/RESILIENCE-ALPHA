@@ -1,7 +1,9 @@
 import hashlib
 import json
 import secrets
+import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +12,11 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from fastapi import Depends, Header, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 
+from app.db import utcnow
 from app.errors import api_error
+from app.models import Session
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -42,21 +47,104 @@ class TokenVerifier:
         )
 
 
-async def current_client_id(
-    request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)
-) -> str:
-    unauthorized = api_error(
+@dataclass(frozen=True)
+class Principal:
+    """Client authentifié et contexte de sa session (claims du JWT)."""
+
+    client_id: str
+    session_id: str
+    factors: tuple[str, ...]
+    client_api_id: str
+    client_api_type: str
+
+    @property
+    def strong(self) -> bool:
+        """Session confirmée par passkey, ou service technique (sonde)."""
+        return "passkey" in self.factors or self.client_api_type == "service"
+
+
+class SessionGuard:
+    """Vérifie en base que la session du JWT est active (non révoquée, non expirée).
+
+    Le résultat est mis en cache quelques secondes par session : on ne consomme pas une
+    connexion du pool à chaque requête (ressource critique du scénario SC-01), au prix
+    d'un délai maximal de prise en compte d'une révocation.
+    """
+
+    def __init__(self, sessionmaker, ttl_seconds: float, max_entries: int = 10_000) -> None:
+        self._sessionmaker = sessionmaker
+        self._ttl = ttl_seconds
+        self._max = max_entries
+        self._cache: dict[str, tuple[float, bool]] = {}
+
+    async def is_active(self, session_id: str, client_id: str) -> bool:
+        now = time.monotonic()
+        cached = self._cache.get(session_id)
+        if cached and cached[0] > now:
+            return cached[1]
+        async with self._sessionmaker() as db:
+            row = (
+                await db.execute(
+                    select(Session.status, Session.client_id, Session.expires_at).where(
+                        Session.id == session_id
+                    )
+                )
+            ).first()
+        active = bool(
+            row
+            and row.status == "active"
+            and row.client_id == client_id
+            and row.expires_at > utcnow()
+        )
+        if len(self._cache) >= self._max:
+            self._cache = {k: v for k, v in self._cache.items() if v[0] > now}
+        self._cache[session_id] = (now + self._ttl, active)
+        return active
+
+
+def _unauthorized():
+    return api_error(
         status.HTTP_401_UNAUTHORIZED,
         "invalid_token",
         "Session invalide ou expirée.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def current_principal(
+    request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)
+) -> Principal:
     if credentials is None:
-        raise unauthorized
+        raise _unauthorized()
     try:
-        return request.app.state.tokens.decode(credentials.credentials)["sub"]
+        claims = request.app.state.tokens.decode(credentials.credentials)
     except jwt.PyJWTError:
-        raise unauthorized from None
+        raise _unauthorized() from None
+    session_id = claims.get("jti")
+    if not session_id or not await request.app.state.sessions.is_active(session_id, claims["sub"]):
+        raise _unauthorized()
+    return Principal(
+        client_id=claims["sub"],
+        session_id=session_id,
+        factors=tuple(claims.get("amr") or ()),
+        client_api_id=claims.get("cid", "orbe-web"),
+        client_api_type=claims.get("cty", "application"),
+    )
+
+
+async def strong_principal(principal: Principal = Depends(current_principal)) -> Principal:
+    """Déplacer de l'argent exige une session confirmée par passkey (CADRAGE §4.2)."""
+    if not principal.strong:
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            "second_factor_required",
+            "Confirmez votre identité avec votre passkey (Face ID, Windows Hello).",
+        )
+    return principal
+
+
+async def current_client_id(principal: Principal = Depends(current_principal)) -> str:
+    return principal.client_id
 
 
 async def idempotency_key(

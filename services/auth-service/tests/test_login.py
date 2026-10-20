@@ -17,10 +17,14 @@ def test_login_returns_rs256_jwt(add_client, login, private_key):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["token_type"] == "bearer"
-    assert body["expires_in"] == 900
+    assert body["mfa_required"] is False
+    assert body["passkey_enrollment_required"] is True
+    token = body["token"]
+    assert token["token_type"] == "bearer"
+    assert token["expires_in"] == 900
+    assert token["factors"] == ["pwd"]
     claims = jwt.decode(
-        body["access_token"],
+        token["access_token"],
         private_key.public_key(),
         algorithms=["RS256"],
         audience="orbe",
@@ -29,6 +33,8 @@ def test_login_returns_rs256_jwt(add_client, login, private_key):
     assert claims["sub"] == client.id
     assert claims["email"] == "camille@orbe.test"
     assert claims["exp"] - claims["iat"] == 900
+    assert claims["jti"] == body["session_id"]
+    assert (claims["amr"], claims["cid"], claims["cty"]) == (["pwd"], "orbe-web", "application")
 
 
 def test_login_normalizes_email(add_client, login):

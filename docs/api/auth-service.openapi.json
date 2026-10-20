@@ -2,26 +2,122 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orbe — auth-service",
-    "description": "Authentification des clients Orbe (JWT RS256 valables 15 min) et validation des clés d'API partenaires. Exposé par le WAF sous `/api/auth`. Erreurs : `{\"detail\": {\"code\", \"message\"}}`. Voir CADRAGE §4.2.",
+    "description": "Authentification forte des clients Orbe : mot de passe puis passkey WebAuthn (biométrie vérifiée par l'appareil), sessions révocables (JWT RS256 de 15 min), applications clientes et clés d'API partenaires. Exposé par le WAF sous `/api/auth`. Erreurs : `{\"detail\": {\"code\", \"message\"}}`. Voir CADRAGE §4.2.",
     "version": "0.1.0"
   },
   "paths": {
+    "/register": {
+      "post": {
+        "tags": [
+          "Authentification"
+        ],
+        "summary": "Créer un compte",
+        "description": "Crée un compte client. Étape suivante : `POST /login`, puis enregistrer une passkey.\n\nHors périmètre du démonstrateur : vérification de l'email et du téléphone, KYC.",
+        "operationId": "register_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email ou téléphone déjà utilisé",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Email, téléphone ou mot de passe invalide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop d'inscriptions depuis cette IP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/login": {
       "post": {
         "tags": [
           "Authentification"
         ],
-        "summary": "Se connecter",
+        "summary": "Se connecter — étape 1 : mot de passe",
         "operationId": "login_login_post",
+        "parameters": [
+          {
+            "name": "X-Client-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Client-Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LoginRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -29,13 +125,23 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/LoginResponse"
                 }
               }
             }
           },
           "401": {
-            "description": "Email ou mot de passe incorrect",
+            "description": "Identifiants ou application cliente invalides",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Application non autorisée pour ce compte",
             "content": {
               "application/json": {
                 "schema": {
@@ -75,6 +181,96 @@
             }
           }
         }
+      }
+    },
+    "/login/passkey": {
+      "post": {
+        "tags": [
+          "Authentification"
+        ],
+        "summary": "Se connecter — étape 2 : passkey (Face ID, Windows Hello)",
+        "operationId": "login_passkey_login_passkey_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Passkey refusée ou session expirée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de tentatives depuis cette IP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logout": {
+      "post": {
+        "tags": [
+          "Authentification"
+        ],
+        "summary": "Se déconnecter (révoque la session)",
+        "operationId": "logout_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Session invalide ou expirée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/me": {
@@ -151,6 +347,251 @@
           },
           "401": {
             "description": "Clé absente, inconnue ou désactivée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/passkeys/register/options": {
+      "post": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Préparer l'enregistrement d'une passkey",
+        "description": "Options à passer à `navigator.credentials.create()`.",
+        "operationId": "registration_options_passkeys_register_options_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Registration Options Passkeys Register Options Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session invalide ou expirée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session sans passkey alors que le compte en a",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/passkeys/register": {
+      "post": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Enregistrer la passkey de cet appareil",
+        "operationId": "register_passkeys_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session invalide ou expirée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session sans passkey alors que le compte en a",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Aucun enregistrement en cours, ou passkey déjà connue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Réponse de l'appareil refusée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/passkeys": {
+      "get": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Mes appareils",
+        "operationId": "list_passkeys_passkeys_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PasskeyOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Passkeys Passkeys Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session invalide ou expirée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session sans passkey alors que le compte en a",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/passkeys/{passkey_id}": {
+      "delete": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Retirer un appareil",
+        "operationId": "delete_passkey_passkeys__passkey_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "passkey_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Passkey Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Session invalide ou expirée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session sans passkey alors que le compte en a",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Passkey inconnue",
             "content": {
               "application/json": {
                 "schema": {
@@ -252,7 +693,219 @@
           }
         ]
       },
+      "LoginResponse": {
+        "properties": {
+          "mfa_required": {
+            "type": "boolean",
+            "title": "Mfa Required"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "webauthn_options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webauthn Options"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "passkey_enrollment_required": {
+            "type": "boolean",
+            "title": "Passkey Enrollment Required",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "mfa_required",
+          "session_id"
+        ],
+        "title": "LoginResponse",
+        "description": "Étape 1 de la connexion.\n\n- `mfa_required = true` : valider la passkey avec `webauthn_options`, puis\n  `POST /login/passkey` ;\n- sinon : `token` est fourni. `passkey_enrollment_required = true` signale un compte\n  sans passkey : la session ne permet que de consulter et d'enregistrer une passkey."
+      },
       "MeResponse": {
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "title": "Client Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "phone_masked": {
+            "type": "string",
+            "title": "Phone Masked"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "factors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Factors"
+          },
+          "passkey_count": {
+            "type": "integer",
+            "title": "Passkey Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_id",
+          "email",
+          "phone_masked",
+          "display_name",
+          "factors",
+          "passkey_count"
+        ],
+        "title": "MeResponse"
+      },
+      "PasskeyLoginRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Session Id"
+          },
+          "credential": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Credential",
+            "description": "Réponse de navigator.credentials.get()"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "credential"
+        ],
+        "title": "PasskeyLoginRequest"
+      },
+      "PasskeyOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "device_name": {
+            "type": "string",
+            "title": "Device Name"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "device_name",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "PasskeyOut"
+      },
+      "PasskeyRegisterRequest": {
+        "properties": {
+          "credential": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Credential",
+            "description": "Réponse de navigator.credentials.create()"
+          },
+          "device_name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Device Name",
+            "default": "Mon appareil"
+          }
+        },
+        "type": "object",
+        "required": [
+          "credential"
+        ],
+        "title": "PasskeyRegisterRequest"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email"
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 24,
+            "minLength": 8,
+            "title": "Phone",
+            "description": "Format français ou international"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 2,
+            "title": "Display Name"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "description": "12 caractères minimum"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "phone",
+          "display_name",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "examples": [
+          {
+            "display_name": "Nathan Moreau",
+            "email": "nathan@orbe.test",
+            "password": "correct-cheval-batterie",
+            "phone": "06 12 34 56 75"
+          }
+        ]
+      },
+      "RegisterResponse": {
         "properties": {
           "client_id": {
             "type": "string",
@@ -278,7 +931,7 @@
           "phone_masked",
           "display_name"
         ],
-        "title": "MeResponse"
+        "title": "RegisterResponse"
       },
       "TokenResponse": {
         "properties": {
@@ -295,12 +948,20 @@
           "expires_in": {
             "type": "integer",
             "title": "Expires In"
+          },
+          "factors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Factors"
           }
         },
         "type": "object",
         "required": [
           "access_token",
-          "expires_in"
+          "expires_in",
+          "factors"
         ],
         "title": "TokenResponse"
       },
@@ -376,7 +1037,11 @@
   "tags": [
     {
       "name": "Authentification",
-      "description": "Connexion et profil du client"
+      "description": "Connexion en deux étapes (mot de passe, puis passkey) et profil"
+    },
+    {
+      "name": "Passkeys",
+      "description": "Appareils WebAuthn (Face ID, Windows Hello)"
     },
     {
       "name": "Partenaires",

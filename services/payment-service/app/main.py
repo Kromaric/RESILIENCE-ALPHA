@@ -20,7 +20,7 @@ from app.metrics import DB_ERRORS, POOL_TIMEOUTS, bind_pool_metrics
 from app.payments import SimulatedAuthorizer
 from app.ratelimit import SlidingWindowLimiter
 from app.routes import health, payments
-from app.security import TokenVerifier
+from app.security import SessionGuard, TokenVerifier
 
 logger = logging.getLogger("http")
 QUIET_PATHS = {"/metrics", "/health/live", "/health/ready"}
@@ -77,10 +77,14 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
             "Paiements entre clients Orbe : transferts payés par carte de test, demandes "
             "d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF "
             "sous `/api/payments`.\n\n"
-            "- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service.\n"
+            "- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service ; la "
+            "session ne doit pas être révoquée. Déplacer de l'argent exige une session confirmée "
+            "par passkey (`403 second_factor_required` sinon).\n"
             "- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) "
             "obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n"
             "- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n"
+            "- Plafond : 500 € par opération. Chaque opération autorisée passe deux écritures "
+            "comptables (débit, crédit).\n"
             "- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` "
             "(refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\n"
             "Voir CADRAGE §4.3."
@@ -88,9 +92,10 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
         openapi_tags=[
             {"name": "Paiements", "description": "Envoyer et rembourser"},
             {"name": "Historique", "description": "Opérations envoyées et reçues"},
-            {"name": "Compte", "description": "Solde et retraits vers le compte lié"},
+            {"name": "Compte", "description": "Solde, comptes liés et retraits"},
             {"name": "Demandes d'argent", "description": "Demander, payer, refuser, annuler"},
             {"name": "QR code", "description": "Recevoir de l'argent par QR code"},
+            {"name": "Contacts", "description": "Carnet de contacts (clients Orbe)"},
         ],
         lifespan=lifespan,
         docs_url="/docs" if settings.enable_docs else None,
@@ -104,6 +109,7 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
     app.state.tokens = TokenVerifier.from_pem_file(
         settings.jwt_public_key_file, issuer=settings.jwt_issuer, audience=settings.jwt_audience
     )
+    app.state.sessions = SessionGuard(sessionmaker, settings.session_cache_seconds)
     app.state.authorizer = SimulatedAuthorizer(
         settings.authorization_min_ms, settings.authorization_max_ms
     )

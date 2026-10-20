@@ -32,10 +32,19 @@ class Settings(BaseSettings):
     jwt_audience: str = "orbe"
     jwt_ttl_seconds: int = 900
 
+    # Second facteur WebAuthn (passkey). L'identifiant de site doit être un nom de domaine,
+    # pas une adresse IP (CADRAGE §3.4).
+    webauthn_rp_id: str = "orbe.test"
+    webauthn_rp_name: str = "Orbe"
+    webauthn_origins: list[str] = ["https://orbe.test"]
+    pending_2fa_seconds: int = 300  # délai pour valider la passkey après le mot de passe
+    web_client_id: str = "orbe-web"  # application utilisée quand X-Client-Id est absent
+
     # Protection de la connexion
     lockout_threshold: int = 5
     lockout_minutes: int = 10
     login_rate_per_ip: int = 20  # tentatives par minute et par IP
+    register_rate_per_ip: int = 5  # inscriptions par minute et par IP
     hash_concurrency: int = 4  # vérifications argon2 simultanées (borne mémoire et CPU)
 
     def sqlalchemy_url(self) -> str | URL:

@@ -18,6 +18,7 @@ from app.payments import (
     card_fingerprint,
     charge,
     check_amount,
+    check_service_scope,
     find_by_contact,
     find_replay,
     get_client,
@@ -25,7 +26,7 @@ from app.payments import (
     validate_card,
 )
 from app.schemas import QrOut, RequestIn, RequestList, RequestOut, RequestPayIn
-from app.security import fingerprint, new_qr_token, new_reference
+from app.security import Principal, fingerprint, new_qr_token, new_reference
 
 
 def request_out(
@@ -178,9 +179,10 @@ async def _out(session: AsyncSession, req: PaymentRequest, client_id: str) -> Re
 
 
 async def pay_request(
-    state, session: AsyncSession, client_id: str, reference: str, body: RequestPayIn, key: str
+    state, session: AsyncSession, principal: Principal, reference: str, body: RequestPayIn, key: str
 ) -> tuple[Transaction, bool]:
-    me = await get_client(session, client_id)
+    me = await get_client(session, principal.client_id)
+    check_service_scope(principal, me)
     req = await _load_request(session, me.id, reference)
     if req.requester_id == me.id:
         raise api_error(403, "not_payer", "Vous ne pouvez pas payer votre propre demande.")
@@ -213,6 +215,7 @@ async def pay_request(
         session,
         me,
         requester,
+        session_id=principal.session_id,
         amount_cents=req.amount_cents,
         currency=req.currency,
         description=req.description,

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orbe — payment-service",
-    "description": "Paiements entre clients Orbe : transferts payés par carte de test, demandes d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF sous `/api/payments`.\n\n- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service.\n- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` (refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\nVoir CADRAGE §4.3.",
+    "description": "Paiements entre clients Orbe : transferts payés par carte de test, demandes d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF sous `/api/payments`.\n\n- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service ; la session ne doit pas être révoquée. Déplacer de l'argent exige une session confirmée par passkey (`403 second_factor_required` sinon).\n- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n- Plafond : 500 € par opération. Chaque opération autorisée passe deux écritures comptables (débit, crédit).\n- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` (refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\nVoir CADRAGE §4.3.",
     "version": "0.1.0"
   },
   "paths": {
@@ -58,7 +58,17 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session non confirmée par passkey",
             "content": {
               "application/json": {
                 "schema": {
@@ -218,7 +228,7 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
             "content": {
               "application/json": {
                 "schema": {
@@ -275,7 +285,7 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
             "content": {
               "application/json": {
                 "schema": {
@@ -358,7 +368,17 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session non confirmée par passkey",
             "content": {
               "application/json": {
                 "schema": {
@@ -449,7 +469,7 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
             "content": {
               "application/json": {
                 "schema": {
@@ -518,7 +538,17 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session non confirmée par passkey",
             "content": {
               "application/json": {
                 "schema": {
@@ -632,7 +662,17 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session non confirmée par passkey",
             "content": {
               "application/json": {
                 "schema": {
@@ -762,7 +802,7 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
             "content": {
               "application/json": {
                 "schema": {
@@ -845,7 +885,17 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session non confirmée par passkey",
             "content": {
               "application/json": {
                 "schema": {
@@ -952,7 +1002,7 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
             "content": {
               "application/json": {
                 "schema": {
@@ -1019,7 +1069,7 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
             "content": {
               "application/json": {
                 "schema": {
@@ -1070,7 +1120,7 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
             "content": {
               "application/json": {
                 "schema": {
@@ -1106,7 +1156,7 @@
             }
           },
           "401": {
-            "description": "Jeton absent, invalide ou expiré",
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
             "content": {
               "application/json": {
                 "schema": {
@@ -1121,6 +1171,451 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/payout-accounts": {
+      "get": {
+        "tags": [
+          "Compte"
+        ],
+        "summary": "Mes comptes liés",
+        "operationId": "list_payout_accounts_payout_accounts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PayoutAccountOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Payout Accounts Payout Accounts Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Compte"
+        ],
+        "summary": "Ajouter un compte lié",
+        "operationId": "add_payout_account_payout_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutAccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutAccountOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session non confirmée par passkey",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "IBAN invalide ou trop de comptes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/payout-accounts/{account_id}/default": {
+      "post": {
+        "tags": [
+          "Compte"
+        ],
+        "summary": "Choisir le compte lié par défaut",
+        "operationId": "default_payout_account_payout_accounts__account_id__default_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutAccountOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session non confirmée par passkey",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Compte lié introuvable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payout-accounts/{account_id}": {
+      "delete": {
+        "tags": [
+          "Compte"
+        ],
+        "summary": "Retirer un compte lié",
+        "operationId": "delete_payout_account_payout_accounts__account_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session non confirmée par passkey",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Compte lié introuvable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contacts": {
+      "get": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Mes contacts",
+        "operationId": "list_contacts_contacts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContactOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Contacts Contacts Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Ajouter un contact (client Orbe)",
+        "operationId": "add_contact_contacts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Session non confirmée par passkey",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Aucun compte Orbe pour ce contact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Contact déjà présent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de recherches par minute",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/contacts/{contact_id}": {
+      "delete": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Retirer un contact",
+        "operationId": "remove_contact_contacts__contact_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Contact Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Jeton absent, invalide, expiré ou session révoquée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Contact introuvable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -1137,21 +1632,18 @@
             "title": "Currency",
             "default": "EUR"
           },
-          "payout_account": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PayoutAccountOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "payout_accounts": {
+            "items": {
+              "$ref": "#/components/schemas/PayoutAccountOut"
+            },
+            "type": "array",
+            "title": "Payout Accounts"
           }
         },
         "type": "object",
         "required": [
           "balance_cents",
-          "payout_account"
+          "payout_accounts"
         ],
         "title": "AccountOut"
       },
@@ -1215,6 +1707,69 @@
           "last4"
         ],
         "title": "CardOut"
+      },
+      "ContactIn": {
+        "properties": {
+          "contact": {
+            "type": "string",
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Contact",
+            "description": "Email ou téléphone"
+          },
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contact"
+        ],
+        "title": "ContactIn"
+      },
+      "ContactOut": {
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "title": "Contact Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "added_at": {
+            "type": "string",
+            "title": "Added At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contact_id",
+          "display_name",
+          "alias",
+          "added_at"
+        ],
+        "title": "ContactOut"
       },
       "ErrorDetail": {
         "properties": {
@@ -1292,6 +1847,20 @@
               }
             ],
             "title": "Recipient Qr"
+          },
+          "recipient_contact": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36,
+                "minLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Contact",
+            "description": "client_id d'un de mes contacts"
           },
           "amount_cents": {
             "type": "integer",
@@ -1398,8 +1967,46 @@
         ],
         "title": "PaymentOut"
       },
+      "PayoutAccountIn": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "iban": {
+            "type": "string",
+            "maxLength": 42,
+            "minLength": 15,
+            "title": "Iban",
+            "description": "Fictif ; seuls les 4 derniers caractères sont conservés"
+          },
+          "make_default": {
+            "type": "boolean",
+            "title": "Make Default",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "iban"
+        ],
+        "title": "PayoutAccountIn",
+        "examples": [
+          {
+            "iban": "FR76 3000 6000 0112 3456 7890 189",
+            "label": "Banque Démo"
+          }
+        ]
+      },
       "PayoutAccountOut": {
         "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
           "label": {
             "type": "string",
             "title": "Label"
@@ -1407,12 +2014,18 @@
           "iban_last4": {
             "type": "string",
             "title": "Iban Last4"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
           }
         },
         "type": "object",
         "required": [
+          "id",
           "label",
-          "iban_last4"
+          "iban_last4",
+          "is_default"
         ],
         "title": "PayoutAccountOut"
       },
@@ -1422,6 +2035,18 @@
             "type": "integer",
             "minimum": 1.0,
             "title": "Amount Cents"
+          },
+          "payout_account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payout Account Id",
+            "description": "Compte lié destinataire ; compte par défaut si absent"
           }
         },
         "type": "object",
@@ -1444,6 +2069,17 @@
             "type": "integer",
             "title": "Amount Cents"
           },
+          "payout_account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payout Account Id"
+          },
           "created_at": {
             "type": "string",
             "title": "Created At"
@@ -1454,6 +2090,7 @@
           "reference",
           "status",
           "amount_cents",
+          "payout_account_id",
           "created_at"
         ],
         "title": "PayoutOut"
@@ -1816,7 +2453,7 @@
     },
     {
       "name": "Compte",
-      "description": "Solde et retraits vers le compte lié"
+      "description": "Solde, comptes liés et retraits"
     },
     {
       "name": "Demandes d'argent",
@@ -1825,6 +2462,10 @@
     {
       "name": "QR code",
       "description": "Recevoir de l'argent par QR code"
+    },
+    {
+      "name": "Contacts",
+      "description": "Carnet de contacts (clients Orbe)"
     }
   ],
   "servers": [
