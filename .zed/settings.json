@@ -1,0 +1,16 @@
+{
+  "lsp": {
+    "basedpyright": {
+      "settings": {
+        "basedpyright": {
+          "typeCheckingMode": "off"
+        }
+      }
+    },
+    "eslint": {
+      "settings": {
+        "workingDirectories": [{ "mode": "auto" }]
+      }
+    }
+  }
+}
