@@ -2,7 +2,7 @@ from pathlib import Path
 
 from conftest import OK_CARD
 
-from app.models import Client, Transaction
+from app.models import Transaction
 
 DECLINED_CARD = {**OK_CARD, "number": "4000 0000 0000 0002"}
 
@@ -77,7 +77,7 @@ def test_recipient_refunds_a_payment(add_client, pay, client, auth, db):
     assert response.status_code == 201
     assert response.json()["refunded"] == original
     assert response.json()["status"] == "completed"
-    assert db.get(Client, lea.id).balance_cents == 0
+    assert db.balance(lea) == 0
     statuses = {
         i["reference"]: i
         for i in client.get("/transactions", headers=auth(camille)).json()["items"]
@@ -108,7 +108,7 @@ def test_a_payment_is_refunded_only_once(add_client, pay, client, auth, db):
 
     assert again.status_code == 409
     assert again.json()["detail"]["code"] == "already_refunded"
-    assert db.get(Client, lea.id).balance_cents == 5000
+    assert db.balance(lea) == 5000
 
 
 def test_refund_replay_returns_the_same_refund(add_client, pay, client, auth, db):
@@ -149,11 +149,13 @@ def test_declined_payments_are_unknown_to_the_recipient(add_client, pay, client,
 def test_account_shows_balance_and_linked_account(add_client, client, auth):
     camille = add_client(balance=4200)
 
-    assert client.get("/account", headers=auth(camille)).json() == {
-        "balance_cents": 4200,
-        "currency": "EUR",
-        "payout_account": {"label": "Banque Démo", "iban_last4": "0142"},
-    }
+    body = client.get("/account", headers=auth(camille)).json()
+
+    assert body["balance_cents"] == 4200
+    assert body["currency"] == "EUR"
+    assert [(a["label"], a["iban_last4"], a["is_default"]) for a in body["payout_accounts"]] == [
+        ("Banque Démo", "0142", True)
+    ]
 
 
 def test_payout_debits_the_balance(add_client, client, auth, db):
@@ -163,7 +165,7 @@ def test_payout_debits_the_balance(add_client, client, auth, db):
 
     assert response.status_code == 201
     assert response.json()["status"] == "completed"
-    assert db.get(Client, camille.id).balance_cents == 3000
+    assert db.balance(camille) == 3000
     item = client.get("/transactions", headers=auth(camille)).json()["items"][0]
     assert (item["type"], item["counterparty"]) == ("payout", "Compte lié")
     assert item["description"] == "Retrait vers Banque Démo •••• 0142"
@@ -176,7 +178,7 @@ def test_payout_cannot_exceed_the_balance(add_client, client, auth, db):
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "insufficient_balance"
-    assert db.get(Client, camille.id).balance_cents == 500
+    assert db.balance(camille) == 500
 
 
 def test_payout_needs_a_linked_account(add_client, client, auth):
@@ -195,7 +197,7 @@ def test_payout_replay_does_not_debit_twice(add_client, client, auth, db):
     replay = client.post("/payouts", json={"amount_cents": 400}, headers=headers)
 
     assert replay.status_code == 200
-    assert db.get(Client, camille.id).balance_cents == 600
+    assert db.balance(camille) == 600
 
 
 def test_orm_model_matches_the_reference_schema():

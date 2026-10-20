@@ -4,26 +4,122 @@ window.ORBE_SPECS = {
   "openapi": "3.1.0",
   "info": {
    "title": "Orbe — auth-service",
-   "description": "Authentification des clients Orbe (JWT RS256 valables 15 min) et validation des clés d'API partenaires. Exposé par le WAF sous `/api/auth`. Erreurs : `{\"detail\": {\"code\", \"message\"}}`. Voir CADRAGE §4.2.",
+   "description": "Authentification forte des clients Orbe : mot de passe puis passkey WebAuthn (biométrie vérifiée par l'appareil), sessions révocables (JWT RS256 de 15 min), applications clientes et clés d'API partenaires. Exposé par le WAF sous `/api/auth`. Erreurs : `{\"detail\": {\"code\", \"message\"}}`. Voir CADRAGE §4.2.",
    "version": "0.1.0"
   },
   "paths": {
+   "/register": {
+    "post": {
+     "tags": [
+      "Authentification"
+     ],
+     "summary": "Créer un compte",
+     "description": "Crée un compte client. Étape suivante : `POST /login`, puis enregistrer une passkey.\n\nHors périmètre du démonstrateur : vérification de l'email et du téléphone, KYC.",
+     "operationId": "register_register_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RegisterRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/RegisterResponse"
+         }
+        }
+       }
+      },
+      "409": {
+       "description": "Email ou téléphone déjà utilisé",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Email, téléphone ou mot de passe invalide",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "429": {
+       "description": "Trop d'inscriptions depuis cette IP",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
    "/login": {
     "post": {
      "tags": [
       "Authentification"
      ],
-     "summary": "Se connecter",
+     "summary": "Se connecter — étape 1 : mot de passe",
      "operationId": "login_login_post",
+     "parameters": [
+      {
+       "name": "X-Client-Id",
+       "in": "header",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "X-Client-Id"
+       }
+      },
+      {
+       "name": "X-API-Key",
+       "in": "header",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "X-Api-Key"
+       }
+      }
+     ],
      "requestBody": {
+      "required": true,
       "content": {
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/LoginRequest"
         }
        }
-      },
-      "required": true
+      }
      },
      "responses": {
       "200": {
@@ -31,13 +127,23 @@ window.ORBE_SPECS = {
        "content": {
         "application/json": {
          "schema": {
-          "$ref": "#/components/schemas/TokenResponse"
+          "$ref": "#/components/schemas/LoginResponse"
          }
         }
        }
       },
       "401": {
-       "description": "Email ou mot de passe incorrect",
+       "description": "Identifiants ou application cliente invalides",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Application non autorisée pour ce compte",
        "content": {
         "application/json": {
          "schema": {
@@ -77,6 +183,96 @@ window.ORBE_SPECS = {
        }
       }
      }
+    }
+   },
+   "/login/passkey": {
+    "post": {
+     "tags": [
+      "Authentification"
+     ],
+     "summary": "Se connecter — étape 2 : passkey (Face ID, Windows Hello)",
+     "operationId": "login_passkey_login_passkey_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PasskeyLoginRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/TokenResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Passkey refusée ou session expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "429": {
+       "description": "Trop de tentatives depuis cette IP",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/logout": {
+    "post": {
+     "tags": [
+      "Authentification"
+     ],
+     "summary": "Se déconnecter (révoque la session)",
+     "operationId": "logout_logout_post",
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
     }
    },
    "/me": {
@@ -153,6 +349,251 @@ window.ORBE_SPECS = {
       },
       "401": {
        "description": "Clé absente, inconnue ou désactivée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/passkeys/register/options": {
+    "post": {
+     "tags": [
+      "Passkeys"
+     ],
+     "summary": "Préparer l'enregistrement d'une passkey",
+     "description": "Options à passer à `navigator.credentials.create()`.",
+     "operationId": "registration_options_passkeys_register_options_post",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "additionalProperties": true,
+          "type": "object",
+          "title": "Response Registration Options Passkeys Register Options Post"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session sans passkey alors que le compte en a",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/passkeys/register": {
+    "post": {
+     "tags": [
+      "Passkeys"
+     ],
+     "summary": "Enregistrer la passkey de cet appareil",
+     "operationId": "register_passkeys_register_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PasskeyRegisterRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/PasskeyOut"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session sans passkey alors que le compte en a",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "409": {
+       "description": "Aucun enregistrement en cours, ou passkey déjà connue",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Réponse de l'appareil refusée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/passkeys": {
+    "get": {
+     "tags": [
+      "Passkeys"
+     ],
+     "summary": "Mes appareils",
+     "operationId": "list_passkeys_passkeys_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "items": {
+           "$ref": "#/components/schemas/PasskeyOut"
+          },
+          "type": "array",
+          "title": "Response List Passkeys Passkeys Get"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session sans passkey alors que le compte en a",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/passkeys/{passkey_id}": {
+    "delete": {
+     "tags": [
+      "Passkeys"
+     ],
+     "summary": "Retirer un appareil",
+     "operationId": "delete_passkey_passkeys__passkey_id__delete",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "passkey_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Passkey Id"
+       }
+      }
+     ],
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session sans passkey alors que le compte en a",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Passkey inconnue",
        "content": {
         "application/json": {
          "schema": {
@@ -254,7 +695,219 @@ window.ORBE_SPECS = {
       }
      ]
     },
+    "LoginResponse": {
+     "properties": {
+      "mfa_required": {
+       "type": "boolean",
+       "title": "Mfa Required"
+      },
+      "session_id": {
+       "type": "string",
+       "title": "Session Id"
+      },
+      "webauthn_options": {
+       "anyOf": [
+        {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Webauthn Options"
+      },
+      "token": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/TokenResponse"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "passkey_enrollment_required": {
+       "type": "boolean",
+       "title": "Passkey Enrollment Required",
+       "default": false
+      }
+     },
+     "type": "object",
+     "required": [
+      "mfa_required",
+      "session_id"
+     ],
+     "title": "LoginResponse",
+     "description": "Étape 1 de la connexion.\n\n- `mfa_required = true` : valider la passkey avec `webauthn_options`, puis\n  `POST /login/passkey` ;\n- sinon : `token` est fourni. `passkey_enrollment_required = true` signale un compte\n  sans passkey : la session ne permet que de consulter et d'enregistrer une passkey."
+    },
     "MeResponse": {
+     "properties": {
+      "client_id": {
+       "type": "string",
+       "title": "Client Id"
+      },
+      "email": {
+       "type": "string",
+       "title": "Email"
+      },
+      "phone_masked": {
+       "type": "string",
+       "title": "Phone Masked"
+      },
+      "display_name": {
+       "type": "string",
+       "title": "Display Name"
+      },
+      "factors": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "title": "Factors"
+      },
+      "passkey_count": {
+       "type": "integer",
+       "title": "Passkey Count"
+      }
+     },
+     "type": "object",
+     "required": [
+      "client_id",
+      "email",
+      "phone_masked",
+      "display_name",
+      "factors",
+      "passkey_count"
+     ],
+     "title": "MeResponse"
+    },
+    "PasskeyLoginRequest": {
+     "properties": {
+      "session_id": {
+       "type": "string",
+       "maxLength": 36,
+       "minLength": 36,
+       "title": "Session Id"
+      },
+      "credential": {
+       "additionalProperties": true,
+       "type": "object",
+       "title": "Credential",
+       "description": "Réponse de navigator.credentials.get()"
+      }
+     },
+     "type": "object",
+     "required": [
+      "session_id",
+      "credential"
+     ],
+     "title": "PasskeyLoginRequest"
+    },
+    "PasskeyOut": {
+     "properties": {
+      "id": {
+       "type": "string",
+       "title": "Id"
+      },
+      "device_name": {
+       "type": "string",
+       "title": "Device Name"
+      },
+      "created_at": {
+       "type": "string",
+       "title": "Created At"
+      },
+      "last_used_at": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Last Used At"
+      }
+     },
+     "type": "object",
+     "required": [
+      "id",
+      "device_name",
+      "created_at",
+      "last_used_at"
+     ],
+     "title": "PasskeyOut"
+    },
+    "PasskeyRegisterRequest": {
+     "properties": {
+      "credential": {
+       "additionalProperties": true,
+       "type": "object",
+       "title": "Credential",
+       "description": "Réponse de navigator.credentials.create()"
+      },
+      "device_name": {
+       "type": "string",
+       "maxLength": 80,
+       "minLength": 1,
+       "title": "Device Name",
+       "default": "Mon appareil"
+      }
+     },
+     "type": "object",
+     "required": [
+      "credential"
+     ],
+     "title": "PasskeyRegisterRequest"
+    },
+    "RegisterRequest": {
+     "properties": {
+      "email": {
+       "type": "string",
+       "maxLength": 254,
+       "minLength": 3,
+       "title": "Email"
+      },
+      "phone": {
+       "type": "string",
+       "maxLength": 24,
+       "minLength": 8,
+       "title": "Phone",
+       "description": "Format français ou international"
+      },
+      "display_name": {
+       "type": "string",
+       "maxLength": 80,
+       "minLength": 2,
+       "title": "Display Name"
+      },
+      "password": {
+       "type": "string",
+       "maxLength": 128,
+       "minLength": 1,
+       "title": "Password",
+       "description": "12 caractères minimum"
+      }
+     },
+     "type": "object",
+     "required": [
+      "email",
+      "phone",
+      "display_name",
+      "password"
+     ],
+     "title": "RegisterRequest",
+     "examples": [
+      {
+       "display_name": "Nathan Moreau",
+       "email": "nathan@orbe.test",
+       "password": "correct-cheval-batterie",
+       "phone": "06 12 34 56 75"
+      }
+     ]
+    },
+    "RegisterResponse": {
      "properties": {
       "client_id": {
        "type": "string",
@@ -280,7 +933,7 @@ window.ORBE_SPECS = {
       "phone_masked",
       "display_name"
      ],
-     "title": "MeResponse"
+     "title": "RegisterResponse"
     },
     "TokenResponse": {
      "properties": {
@@ -297,12 +950,20 @@ window.ORBE_SPECS = {
       "expires_in": {
        "type": "integer",
        "title": "Expires In"
+      },
+      "factors": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "title": "Factors"
       }
      },
      "type": "object",
      "required": [
       "access_token",
-      "expires_in"
+      "expires_in",
+      "factors"
      ],
      "title": "TokenResponse"
     },
@@ -378,7 +1039,11 @@ window.ORBE_SPECS = {
   "tags": [
    {
     "name": "Authentification",
-    "description": "Connexion et profil du client"
+    "description": "Connexion en deux étapes (mot de passe, puis passkey) et profil"
+   },
+   {
+    "name": "Passkeys",
+    "description": "Appareils WebAuthn (Face ID, Windows Hello)"
    },
    {
     "name": "Partenaires",
@@ -400,7 +1065,7 @@ window.ORBE_SPECS = {
   "openapi": "3.1.0",
   "info": {
    "title": "Orbe — payment-service",
-   "description": "Paiements entre clients Orbe : transferts payés par carte de test, demandes d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF sous `/api/payments`.\n\n- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service.\n- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` (refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\nVoir CADRAGE §4.3.",
+   "description": "Paiements entre clients Orbe : transferts payés par carte de test, demandes d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF sous `/api/payments`.\n\n- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service ; la session ne doit pas être révoquée. Déplacer de l'argent exige une session confirmée par passkey (`403 second_factor_required` sinon).\n- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n- Plafond : 500 € par opération. Chaque opération autorisée passe deux écritures comptables (débit, crédit).\n- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` (refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\nVoir CADRAGE §4.3.",
    "version": "0.1.0"
   },
   "paths": {
@@ -456,7 +1121,17 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session non confirmée par passkey",
        "content": {
         "application/json": {
          "schema": {
@@ -616,7 +1291,7 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
        "content": {
         "application/json": {
          "schema": {
@@ -673,7 +1348,7 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
        "content": {
         "application/json": {
          "schema": {
@@ -756,7 +1431,17 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session non confirmée par passkey",
        "content": {
         "application/json": {
          "schema": {
@@ -847,7 +1532,7 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
        "content": {
         "application/json": {
          "schema": {
@@ -916,7 +1601,17 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session non confirmée par passkey",
        "content": {
         "application/json": {
          "schema": {
@@ -1030,7 +1725,17 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session non confirmée par passkey",
        "content": {
         "application/json": {
          "schema": {
@@ -1160,7 +1865,7 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
        "content": {
         "application/json": {
          "schema": {
@@ -1243,7 +1948,17 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session non confirmée par passkey",
        "content": {
         "application/json": {
          "schema": {
@@ -1350,7 +2065,7 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
        "content": {
         "application/json": {
          "schema": {
@@ -1417,7 +2132,7 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
        "content": {
         "application/json": {
          "schema": {
@@ -1468,7 +2183,7 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
        "content": {
         "application/json": {
          "schema": {
@@ -1504,7 +2219,7 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Jeton absent, invalide ou expiré",
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
        "content": {
         "application/json": {
          "schema": {
@@ -1519,6 +2234,451 @@ window.ORBE_SPECS = {
        "HTTPBearer": []
       }
      ]
+    }
+   },
+   "/payout-accounts": {
+    "get": {
+     "tags": [
+      "Compte"
+     ],
+     "summary": "Mes comptes liés",
+     "operationId": "list_payout_accounts_payout_accounts_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "items": {
+           "$ref": "#/components/schemas/PayoutAccountOut"
+          },
+          "type": "array",
+          "title": "Response List Payout Accounts Payout Accounts Get"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    },
+    "post": {
+     "tags": [
+      "Compte"
+     ],
+     "summary": "Ajouter un compte lié",
+     "operationId": "add_payout_account_payout_accounts_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PayoutAccountIn"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/PayoutAccountOut"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session non confirmée par passkey",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "IBAN invalide ou trop de comptes",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/payout-accounts/{account_id}/default": {
+    "post": {
+     "tags": [
+      "Compte"
+     ],
+     "summary": "Choisir le compte lié par défaut",
+     "operationId": "default_payout_account_payout_accounts__account_id__default_post",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "account_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Account Id"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/PayoutAccountOut"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session non confirmée par passkey",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Compte lié introuvable",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/payout-accounts/{account_id}": {
+    "delete": {
+     "tags": [
+      "Compte"
+     ],
+     "summary": "Retirer un compte lié",
+     "operationId": "delete_payout_account_payout_accounts__account_id__delete",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "account_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Account Id"
+       }
+      }
+     ],
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session non confirmée par passkey",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Compte lié introuvable",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/contacts": {
+    "get": {
+     "tags": [
+      "Contacts"
+     ],
+     "summary": "Mes contacts",
+     "operationId": "list_contacts_contacts_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "items": {
+           "$ref": "#/components/schemas/ContactOut"
+          },
+          "type": "array",
+          "title": "Response List Contacts Contacts Get"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    },
+    "post": {
+     "tags": [
+      "Contacts"
+     ],
+     "summary": "Ajouter un contact (client Orbe)",
+     "operationId": "add_contact_contacts_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ContactIn"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ContactOut"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session non confirmée par passkey",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Aucun compte Orbe pour ce contact",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "409": {
+       "description": "Contact déjà présent",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "429": {
+       "description": "Trop de recherches par minute",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/contacts/{contact_id}": {
+    "delete": {
+     "tags": [
+      "Contacts"
+     ],
+     "summary": "Retirer un contact",
+     "operationId": "remove_contact_contacts__contact_id__delete",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "contact_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Contact Id"
+       }
+      }
+     ],
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Jeton absent, invalide, expiré ou session révoquée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Contact introuvable",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
     }
    }
   },
@@ -1535,21 +2695,18 @@ window.ORBE_SPECS = {
        "title": "Currency",
        "default": "EUR"
       },
-      "payout_account": {
-       "anyOf": [
-        {
-         "$ref": "#/components/schemas/PayoutAccountOut"
-        },
-        {
-         "type": "null"
-        }
-       ]
+      "payout_accounts": {
+       "items": {
+        "$ref": "#/components/schemas/PayoutAccountOut"
+       },
+       "type": "array",
+       "title": "Payout Accounts"
       }
      },
      "type": "object",
      "required": [
       "balance_cents",
-      "payout_account"
+      "payout_accounts"
      ],
      "title": "AccountOut"
     },
@@ -1613,6 +2770,69 @@ window.ORBE_SPECS = {
       "last4"
      ],
      "title": "CardOut"
+    },
+    "ContactIn": {
+     "properties": {
+      "contact": {
+       "type": "string",
+       "maxLength": 254,
+       "minLength": 3,
+       "title": "Contact",
+       "description": "Email ou téléphone"
+      },
+      "alias": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 80
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Alias"
+      }
+     },
+     "type": "object",
+     "required": [
+      "contact"
+     ],
+     "title": "ContactIn"
+    },
+    "ContactOut": {
+     "properties": {
+      "contact_id": {
+       "type": "string",
+       "title": "Contact Id"
+      },
+      "display_name": {
+       "type": "string",
+       "title": "Display Name"
+      },
+      "alias": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Alias"
+      },
+      "added_at": {
+       "type": "string",
+       "title": "Added At"
+      }
+     },
+     "type": "object",
+     "required": [
+      "contact_id",
+      "display_name",
+      "alias",
+      "added_at"
+     ],
+     "title": "ContactOut"
     },
     "ErrorDetail": {
      "properties": {
@@ -1690,6 +2910,20 @@ window.ORBE_SPECS = {
         }
        ],
        "title": "Recipient Qr"
+      },
+      "recipient_contact": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 36,
+         "minLength": 36
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Recipient Contact",
+       "description": "client_id d'un de mes contacts"
       },
       "amount_cents": {
        "type": "integer",
@@ -1796,8 +3030,46 @@ window.ORBE_SPECS = {
      ],
      "title": "PaymentOut"
     },
+    "PayoutAccountIn": {
+     "properties": {
+      "label": {
+       "type": "string",
+       "maxLength": 80,
+       "minLength": 1,
+       "title": "Label"
+      },
+      "iban": {
+       "type": "string",
+       "maxLength": 42,
+       "minLength": 15,
+       "title": "Iban",
+       "description": "Fictif ; seuls les 4 derniers caractères sont conservés"
+      },
+      "make_default": {
+       "type": "boolean",
+       "title": "Make Default",
+       "default": false
+      }
+     },
+     "type": "object",
+     "required": [
+      "label",
+      "iban"
+     ],
+     "title": "PayoutAccountIn",
+     "examples": [
+      {
+       "iban": "FR76 3000 6000 0112 3456 7890 189",
+       "label": "Banque Démo"
+      }
+     ]
+    },
     "PayoutAccountOut": {
      "properties": {
+      "id": {
+       "type": "string",
+       "title": "Id"
+      },
       "label": {
        "type": "string",
        "title": "Label"
@@ -1805,12 +3077,18 @@ window.ORBE_SPECS = {
       "iban_last4": {
        "type": "string",
        "title": "Iban Last4"
+      },
+      "is_default": {
+       "type": "boolean",
+       "title": "Is Default"
       }
      },
      "type": "object",
      "required": [
+      "id",
       "label",
-      "iban_last4"
+      "iban_last4",
+      "is_default"
      ],
      "title": "PayoutAccountOut"
     },
@@ -1820,6 +3098,18 @@ window.ORBE_SPECS = {
        "type": "integer",
        "minimum": 1.0,
        "title": "Amount Cents"
+      },
+      "payout_account_id": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Payout Account Id",
+       "description": "Compte lié destinataire ; compte par défaut si absent"
       }
      },
      "type": "object",
@@ -1842,6 +3132,17 @@ window.ORBE_SPECS = {
        "type": "integer",
        "title": "Amount Cents"
       },
+      "payout_account_id": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Payout Account Id"
+      },
       "created_at": {
        "type": "string",
        "title": "Created At"
@@ -1852,6 +3153,7 @@ window.ORBE_SPECS = {
       "reference",
       "status",
       "amount_cents",
+      "payout_account_id",
       "created_at"
      ],
      "title": "PayoutOut"
@@ -2214,7 +3516,7 @@ window.ORBE_SPECS = {
    },
    {
     "name": "Compte",
-    "description": "Solde et retraits vers le compte lié"
+    "description": "Solde, comptes liés et retraits"
    },
    {
     "name": "Demandes d'argent",
@@ -2223,6 +3525,10 @@ window.ORBE_SPECS = {
    {
     "name": "QR code",
     "description": "Recevoir de l'argent par QR code"
+   },
+   {
+    "name": "Contacts",
+    "description": "Carnet de contacts (clients Orbe)"
    }
   ],
   "servers": [

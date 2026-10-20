@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import Settings
 from app.main import create_app
-from app.models import ApiKey, Base, Client
+from app.models import Base, Client, ClientApi, Passkey, Session
 from app.ratelimit import SlidingWindowLimiter
 
 PASSWORD = "demo-password"
@@ -57,8 +57,16 @@ async def _create_schema(engine):
 
 async def _reset(engine):
     async with engine.begin() as conn:
-        await conn.execute(delete(ApiKey))
-        await conn.execute(delete(Client))
+        for model in (Session, Passkey, ClientApi, Client):
+            await conn.execute(delete(model))
+        await conn.execute(
+            ClientApi.__table__.insert().values(
+                id="orbe-web",
+                name="Application Orbe (web)",
+                type="application",
+                scopes=["payments"],
+            )
+        )
 
 
 @pytest.fixture(scope="session")
@@ -72,6 +80,7 @@ def client(app):
 def clean_state(client, app):
     client.portal.call(_reset, app.state.engine)
     app.state.login_limiter = SlidingWindowLimiter(app.state.settings.login_rate_per_ip)
+    app.state.register_limiter = SlidingWindowLimiter(app.state.settings.register_rate_per_ip)
 
 
 @pytest.fixture
@@ -94,6 +103,25 @@ def db(client, app):
                     return await session.get(model, key)
 
             return client.portal.call(_get)
+
+        def run(self, fn):
+            async def _run():
+                async with app.state.sessionmaker() as session:
+                    result = await fn(session)
+                    await session.commit()
+                    return result
+
+            return client.portal.call(_run)
+
+        def count(self, model, *conditions):
+            from sqlalchemy import func, select
+
+            async def _count(session):
+                return await session.scalar(
+                    select(func.count()).select_from(model).where(*conditions)
+                )
+
+            return self.run(_count)
 
     return Db()
 
@@ -121,3 +149,39 @@ def login(client):
         return client.post("/login", json={"email": email, "password": password}, **kwargs)
 
     return _login
+
+
+@pytest.fixture
+def token(login):
+    """Jeton d'une session ouverte au mot de passe seul (compte sans passkey)."""
+
+    def _token(**kwargs):
+        response = login(**kwargs)
+        assert response.status_code == 200, response.text
+        return response.json()["token"]["access_token"]
+
+    return _token
+
+
+def bearer(access_token):
+    return {"Authorization": f"Bearer {access_token}"}
+
+
+@pytest.fixture
+def enroll(client, token):
+    """Enregistre une passkey (authentificateur simulé) sur le compte et la retourne."""
+    from soft_authenticator import SoftAuthenticator
+
+    def _enroll(authenticator=None, **login_kwargs):
+        authenticator = authenticator or SoftAuthenticator()
+        headers = bearer(token(**login_kwargs))
+        options = client.post("/passkeys/register/options", headers=headers).json()
+        response = client.post(
+            "/passkeys/register",
+            json={"credential": authenticator.register(options), "device_name": "iPhone de test"},
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        return authenticator
+
+    return _enroll

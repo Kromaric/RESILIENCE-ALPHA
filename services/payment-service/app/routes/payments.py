@@ -3,14 +3,18 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import payment_requests, payments
+from app import contacts, linked_accounts, payment_requests, payments
 from app.db import get_session
 from app.errors import api_error
 from app.schemas import (
     AccountOut,
+    ContactIn,
+    ContactOut,
     ErrorOut,
     PayIn,
     PaymentOut,
+    PayoutAccountIn,
+    PayoutAccountOut,
     PayoutIn,
     PayoutOut,
     QrOut,
@@ -22,16 +26,17 @@ from app.schemas import (
     TransactionItem,
     TransactionList,
 )
-from app.security import current_client_id, idempotency_key
+from app.security import Principal, current_client_id, idempotency_key, strong_principal
 
 router = APIRouter()
 
 # Réponses d'erreur documentées dans Swagger ; corps commun {"detail": {"code", "message"}}
 _ERR = {"model": ErrorOut}
-READ = {401: {**_ERR, "description": "Jeton absent, invalide ou expiré"}}
+READ = {401: {**_ERR, "description": "Jeton absent, invalide, expiré ou session révoquée"}}
+STRONG = {**READ, 403: {**_ERR, "description": "Session non confirmée par passkey"}}
 READ404 = {**READ, 404: {**_ERR, "description": "Introuvable pour ce client"}}
 MONEY = {
-    **READ,
+    **STRONG,
     400: {**_ERR, "description": "Idempotency-Key absente ou invalide"},
     409: {**_ERR, "description": "Idempotency-Key déjà utilisée pour une autre requête"},
     422: {**_ERR, "description": "Données invalides, carte non acceptée, solde insuffisant…"},
@@ -72,12 +77,12 @@ async def pay(
     body: PayIn,
     request: Request,
     response: Response,
-    client_id: str = Depends(current_client_id),
+    principal: Principal = Depends(strong_principal),
     key: str = Depends(idempotency_key),
     session: AsyncSession = Depends(get_session),
 ) -> PaymentOut:
-    limit_rate(request, client_id)
-    tx, is_new = await payments.pay(request.app.state, session, client_id, body, key)
+    limit_rate(request, principal.client_id)
+    tx, is_new = await payments.pay(request.app.state, session, principal, body, key)
     created(response, is_new)
     return payments.payment_out(tx)
 
@@ -128,11 +133,11 @@ async def get_transaction(
 async def refund(
     reference: str,
     response: Response,
-    client_id: str = Depends(current_client_id),
+    principal: Principal = Depends(strong_principal),
     key: str = Depends(idempotency_key),
     session: AsyncSession = Depends(get_session),
 ) -> RefundOut:
-    out, is_new = await payments.refund(session, client_id, reference, key)
+    out, is_new = await payments.refund(session, principal, reference, key)
     created(response, is_new)
     return out
 
@@ -162,12 +167,12 @@ async def payout(
     body: PayoutIn,
     request: Request,
     response: Response,
-    client_id: str = Depends(current_client_id),
+    principal: Principal = Depends(strong_principal),
     key: str = Depends(idempotency_key),
     session: AsyncSession = Depends(get_session),
 ) -> PayoutOut:
     out, is_new = await payments.payout(
-        request.app.state, session, client_id, body.amount_cents, key
+        request.app.state, session, principal, body.amount_cents, body.payout_account_id, key
     )
     created(response, is_new)
     return out
@@ -185,13 +190,13 @@ async def create_request(
     body: RequestIn,
     request: Request,
     response: Response,
-    client_id: str = Depends(current_client_id),
+    principal: Principal = Depends(strong_principal),
     key: str = Depends(idempotency_key),
     session: AsyncSession = Depends(get_session),
 ) -> RequestOut:
-    limit_rate(request, client_id)
+    limit_rate(request, principal.client_id)
     out, is_new = await payment_requests.create_request(
-        request.app.state, session, client_id, body, key
+        request.app.state, session, principal.client_id, body, key
     )
     created(response, is_new)
     return out
@@ -226,13 +231,13 @@ async def pay_request(
     body: RequestPayIn,
     request: Request,
     response: Response,
-    client_id: str = Depends(current_client_id),
+    principal: Principal = Depends(strong_principal),
     key: str = Depends(idempotency_key),
     session: AsyncSession = Depends(get_session),
 ) -> PaymentOut:
-    limit_rate(request, client_id)
+    limit_rate(request, principal.client_id)
     tx, is_new = await payment_requests.pay_request(
-        request.app.state, session, client_id, reference, body, key
+        request.app.state, session, principal, reference, body, key
     )
     created(response, is_new)
     return payments.payment_out(tx)
@@ -292,3 +297,122 @@ async def rotate_qr(
     client_id: str = Depends(current_client_id), session: AsyncSession = Depends(get_session)
 ) -> QrOut:
     return await payment_requests.rotate_qr(session, client_id)
+
+
+# --- Comptes liés -----------------------------------------------------------------------
+
+
+@router.get(
+    "/payout-accounts",
+    response_model=list[PayoutAccountOut],
+    tags=["Compte"],
+    summary="Mes comptes liés",
+    responses=READ,
+)
+async def list_payout_accounts(
+    client_id: str = Depends(current_client_id), session: AsyncSession = Depends(get_session)
+) -> list[PayoutAccountOut]:
+    return await linked_accounts.list_accounts(session, client_id)
+
+
+@router.post(
+    "/payout-accounts",
+    response_model=PayoutAccountOut,
+    status_code=201,
+    tags=["Compte"],
+    summary="Ajouter un compte lié",
+    responses={**STRONG, 422: {**_ERR, "description": "IBAN invalide ou trop de comptes"}},
+)
+async def add_payout_account(
+    body: PayoutAccountIn,
+    request: Request,
+    principal: Principal = Depends(strong_principal),
+    session: AsyncSession = Depends(get_session),
+) -> PayoutAccountOut:
+    return await linked_accounts.add_account(request.app.state, session, principal.client_id, body)
+
+
+@router.post(
+    "/payout-accounts/{account_id}/default",
+    response_model=PayoutAccountOut,
+    tags=["Compte"],
+    summary="Choisir le compte lié par défaut",
+    responses={**STRONG, 404: {**_ERR, "description": "Compte lié introuvable"}},
+)
+async def default_payout_account(
+    account_id: str,
+    principal: Principal = Depends(strong_principal),
+    session: AsyncSession = Depends(get_session),
+) -> PayoutAccountOut:
+    return await linked_accounts.set_default(session, principal.client_id, account_id)
+
+
+@router.delete(
+    "/payout-accounts/{account_id}",
+    status_code=204,
+    tags=["Compte"],
+    summary="Retirer un compte lié",
+    responses={**STRONG, 404: {**_ERR, "description": "Compte lié introuvable"}},
+)
+async def delete_payout_account(
+    account_id: str,
+    principal: Principal = Depends(strong_principal),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    await linked_accounts.delete_account(session, principal.client_id, account_id)
+    return Response(status_code=204)
+
+
+# --- Contacts ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/contacts",
+    response_model=list[ContactOut],
+    tags=["Contacts"],
+    summary="Mes contacts",
+    responses=READ,
+)
+async def list_contacts(
+    client_id: str = Depends(current_client_id), session: AsyncSession = Depends(get_session)
+) -> list[ContactOut]:
+    return await contacts.list_contacts(session, client_id)
+
+
+@router.post(
+    "/contacts",
+    response_model=ContactOut,
+    status_code=201,
+    tags=["Contacts"],
+    summary="Ajouter un contact (client Orbe)",
+    responses={
+        **STRONG,
+        404: {**_ERR, "description": "Aucun compte Orbe pour ce contact"},
+        409: {**_ERR, "description": "Contact déjà présent"},
+        429: {**_ERR, "description": "Trop de recherches par minute"},
+    },
+)
+async def add_contact(
+    body: ContactIn,
+    request: Request,
+    principal: Principal = Depends(strong_principal),
+    session: AsyncSession = Depends(get_session),
+) -> ContactOut:
+    limit_rate(request, principal.client_id)
+    return await contacts.add_contact(request.app.state, session, principal.client_id, body)
+
+
+@router.delete(
+    "/contacts/{contact_id}",
+    status_code=204,
+    tags=["Contacts"],
+    summary="Retirer un contact",
+    responses={**READ, 404: {**_ERR, "description": "Contact introuvable"}},
+)
+async def remove_contact(
+    contact_id: str,
+    client_id: str = Depends(current_client_id),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    await contacts.remove_contact(session, client_id, contact_id)
+    return Response(status_code=204)

@@ -1,7 +1,7 @@
 # PROJECT RESILIENCE-ALPHA — Cadrage technique
 
 > Workshop EPSI BAC+5 — Octobre 2026 — Consortium G\<n\>
-> Statut : **brouillon v0.3** — modèle métier « Orbe » (transferts entre clients) intégré
+> Statut : **v0.4** — modèle Orbe v2 codé : authentification forte (passkeys), sessions révocables, comptabilité en partie double
 > Périmètre : architecture, composants, interfaces, données, observabilité, détection, remédiation, sécurité technique, déploiement.
 > La gouvernance (EBIOS RM, PCA/PRA, NIS2/DORA) fait l'objet d'un document séparé.
 
@@ -150,7 +150,7 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 
 ### 4.2 auth-service (8001)
 
-> **Évolution validée (v2, pas encore codée)** : double authentification **mot de passe + passkey biométrique (WebAuthn)**, sessions révocables et applications clientes. Modèle de données : `docs/mcd.md`.
+> **v2** : double authentification **mot de passe + passkey biométrique (WebAuthn)**, sessions révocables et applications clientes. Modèle de données : `docs/mcd.md`.
 
 **Authentification forte (DSP2 : deux facteurs parmi trois)** — le mot de passe est ce que l'on sait ; la passkey, déverrouillée par Face ID / Windows Hello, est ce que l'on possède et ce que l'on est. La biométrie est vérifiée **sur l'appareil** : le serveur ne reçoit ni image ni gabarit, seulement une signature, et ne stocke que la clé publique de la passkey (aucune donnée sensible au sens de l'art. 9 RGPD).
 
@@ -164,6 +164,7 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 
 | Endpoint | Entrée | Sortie |
 |---|---|---|
+| `POST /register` | `{ "email", "phone", "display_name", "password" }` | `201 { "client_id", … }` · `409` (`email_taken`, `phone_taken`) · `422` (`weak_password`…) · `429` |
 | `POST /login` | `{ "email", "password" }` + en-tête `X-Client-Id` (application) | `200 { "mfa_required", "session_id", "webauthn_options" }` · `401` · `423` · `429` |
 | `POST /login/passkey` | `{ "session_id", "assertion" }` | `200 { "access_token", "token_type": "bearer", "expires_in": 900 }` · `401` |
 | `POST /passkeys/register/options` · `POST /passkeys/register` | session active | enregistrement d'une passkey (un appareil) |
@@ -176,6 +177,7 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 
 - Bibliothèques : `webauthn` (Duo Labs) côté serveur, `@simplewebauthn/browser` côté React. Identifiant de site (RP ID) : **`orbe.test`** (§3.4) ; vérification utilisateur exigée (`userVerification: "required"`).
 - JWT **RS256**, durée 15 min, claims `sub` (client_id), `email`, `jti` (= identifiant de session), `amr` (`["pwd", "passkey"]`) ; clé privée lue dans Vault, clé publique distribuée aux services de paiement.
+- **Inscription** : email et téléphone normalisés et uniques, mot de passe de 12 caractères minimum refusé s'il est courant ou contient l'email, 5 inscriptions par minute et par IP. `auth_svc` n'a le droit d'insérer que `id, email, phone, display_name, password_hash` : une inscription ne peut pas créer de compte de sonde. Répondre « email déjà utilisé » révèle l'existence d'un compte (compromis assumé, freiné par la limitation de débit). Hors périmètre : vérification de l'email et du téléphone, KYC.
 - Mots de passe : `argon2id`. **5 échecs → compte bloqué 10 min** (`failed_logins`, `locked_until`) + limitation par IP. Les tentatives sont tracées dans les journaux (Loki / SOC), pas en base.
 - Compteur de signatures de la passkey vérifié à chaque connexion : un compteur qui recule signale une passkey clonée → refus et alerte SOC.
 - **Compatibilité web** : WebAuthn est un standard du navigateur, utilisable depuis le front web responsive sans application native (Safari iOS 16+ → Face ID, Chrome Android → déverrouillage de l'appareil, Windows Hello sur PC). Le front détecte la prise en charge avec `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()`. Dans le dossier, parler de « biométrie de l'appareil » : WebAuthn garantit la vérification de l'utilisateur, pas le type de biométrie.
@@ -255,7 +257,7 @@ Carte de test du payeur ──► payment-service ──► solde du bénéficia
 
 **Référence publique** : `tx_` + 8 caractères hexadécimaux (ex. `tx_9c01e7aa`), unique ; l'UUID reste interne.
 
-**Comptabilité en partie double (v2, pas encore codée)** : toute opération autorisée ou effectuée génère **deux écritures** de même montant (débit, crédit), dans la même transaction SQL ; une opération refusée n'en génère aucune.
+**Comptabilité en partie double** : toute opération autorisée ou effectuée génère **deux écritures** de même montant (débit, crédit), dans la même transaction SQL ; une opération refusée n'en génère aucune.
 
 | Opération | Débit | Crédit |
 |---|---|---|
@@ -267,9 +269,7 @@ Carte de test du payeur ──► payment-service ──► solde du bénéficia
 - pour chaque opération, Σ débits = Σ crédits ;
 - pour chaque compte, `solde = Σ crédits − Σ débits` ; solde d'un compte client ≥ 0.
 
-v1 (code actuel) : `solde = Σ paiements reçus (authorized + refunded) − Σ remboursements effectués − Σ retraits effectués`.
-
-**Autres évolutions v2 (pas encore codées)** :
+**Autres évolutions v2** :
 - **Comptes de contrepartie** (« Encaissements carte », « Retraits ») : comptes Orbe sans titulaire qui représentent l'extérieur, pour que chaque écriture ait son vis-à-vis.
 - **Plusieurs comptes liés** par client, dont un par défaut : `GET/POST/DELETE /payout-accounts`, `POST /payout-accounts/{id}/default` ; `POST /payouts` accepte un `payout_account_id` facultatif (sinon le compte par défaut).
 - **Contacts** : `GET /contacts`, `POST /contacts` (`{ "contact": "<email ou téléphone>", "alias" }`), `DELETE /contacts/{id}` ; seuls des clients Orbe peuvent être ajoutés, réponse neutre si le contact est inconnu (anti-énumération).
@@ -358,40 +358,7 @@ Maquette de référence : `frontend/maquette/orbe-accueil-mobile.html` (applicat
 
 ## 5. Modèle de données (MariaDB)
 
-> **Modèle cible v2** : MCD et MLD dans [`docs/mcd.md`](docs/mcd.md) — ajoute `sessions`, `passkeys`, `client_apis` (remplace `api_keys`), `ledger_accounts` (porte le solde) et `ledger_entries` (écritures), et `transactions.session_id`. Le schéma ci-dessous est la **v1, actuellement codée**.
-
-```sql
-clients          (id CHAR(36) PK, email UNIQUE, phone UNIQUE  -- E.164
-                  , display_name, password_hash,
-                  balance_cents BIGINT NOT NULL DEFAULT 0 CHECK (balance_cents >= 0),
-                  failed_logins INT DEFAULT 0, locked_until DATETIME NULL,
-                  qr_token CHAR(22) UNIQUE,                               -- jeton opaque du QR « Recevoir »
-                  is_probe BOOL DEFAULT FALSE, created_at)
-payment_requests (id CHAR(36) PK, reference CHAR(11) UNIQUE,               -- rq_xxxxxxxx
-                  requester_id FK, payer_id FK NULL, transaction_id FK NULL,
-                  amount_cents INT CHECK (> 0), currency CHAR(3), description VARCHAR(140),
-                  status ENUM('pending','paid','declined','cancelled','expired','failed'),
-                  failure_reason VARCHAR(32) NULL,
-                  idempotency_key CHAR(36), request_hash CHAR(64),
-                  UNIQUE (requester_id, idempotency_key),
-                  created_at, expires_at, updated_at)
-payout_accounts  (id PK, client_id FK UNIQUE, label, iban_last4 CHAR(4))   -- IBAN fictif, jamais complet
-api_keys         (id PK, partner_name, key_hash UNIQUE, scopes JSON, active, created_at)
-transactions     (id CHAR(36) PK, reference CHAR(11) UNIQUE,              -- tx_xxxxxxxx
-                  type ENUM('payment','refund','payout'),
-                  payer_id FK NULL, recipient_id FK NULL,
-                  parent_id FK NULL,                                       -- refund → paiement d'origine
-                  amount_cents INT NOT NULL CHECK (amount_cents > 0), currency CHAR(3),
-                  description VARCHAR(140) NULL,
-                  card_brand VARCHAR(16) NULL, card_last4 CHAR(4) NULL,
-                  status ENUM('pending','authorized','declined','failed','refunded','completed'),
-                  decline_reason VARCHAR(32) NULL,
-                  idempotency_key CHAR(36), request_hash CHAR(64),
-                  UNIQUE (payer_id, idempotency_key), UNIQUE (parent_id),  -- un remboursement par paiement
-                  created_at, updated_at,
-                  INDEX (payer_id, created_at), INDEX (recipient_id, created_at),
-                  INDEX (status, created_at))
-```
+Modèle conceptuel, règles de gestion et MLD : [`docs/mcd.md`](docs/mcd.md). Schéma de référence : `infra/mariadb/init/01-schema.sql` (tables `clients`, `client_apis`, `passkeys`, `sessions`, `ledger_accounts`, `ledger_entries`, `payout_accounts`, `contacts`, `transactions`, `payment_requests`).
 
 | `type` | payer | recipient | Statuts possibles |
 |---|---|---|---|
@@ -401,14 +368,16 @@ transactions     (id CHAR(36) PK, reference CHAR(11) UNIQUE,              -- tx_
 
 **Libellés côté front** : `authorized` = Autorisée · `pending` = En attente · `declined` = Refusée · `failed` = Échouée · `refunded` = Remboursée · `completed` = Effectué.
 
-**Comptes MariaDB (moindre privilège)**
+**Comptes MariaDB (moindre privilège, droits par colonne)** — `infra/mariadb/init/02-users.sh`
 
 | Compte | Droits |
 |---|---|
-| `auth_svc` | `SELECT` sur `clients`, `api_keys` ; `UPDATE (failed_logins, locked_until)` sur `clients` |
-| `payment_svc` | `SELECT` sur `clients`, `payout_accounts` ; `UPDATE (balance_cents, qr_token)` sur `clients` ; `SELECT, INSERT, UPDATE` sur `transactions` et `payment_requests` |
-| `remediation_ro` | `SELECT` sur `transactions`, `clients (id, balance_cents, is_probe)` (contrôle de cohérence) |
-| `exporter` | `PROCESS, REPLICATION CLIENT` |
+| `auth_svc` | `clients` (lecture, `UPDATE (failed_logins, locked_until)`), `client_apis` (lecture), `passkeys`, `sessions` |
+| `payment_svc` | `clients` (lecture, `UPDATE (qr_token)`), `sessions` (lecture de `id, client_id, client_api_id, status, factors, expires_at` uniquement), `ledger_accounts` (lecture, création, `UPDATE (balance_cents)`), `ledger_entries` (lecture, insertion), `transactions`, `payment_requests`, `payout_accounts`, `contacts` |
+| `remediation_ro` | lecture de `transactions`, `ledger_entries`, `ledger_accounts` (contrôles de cohérence) |
+| `exporter` | `PROCESS, REPLICATION CLIENT, SLAVE MONITOR` |
+
+Applications clientes à secret (sonde, partenaires) : `infra/mariadb/init/03-client-apis.sh`, clés lues dans des secrets Docker, seule leur empreinte est stockée.
 
 **Données** : jeu fictif généré par Faker (`scripts/seed.py`) : clients avec email et téléphone fictifs (`+33 6…`, domaine `.test`), comptes de retrait fictifs, historique de transactions couvrant tous les statuts. Cartes : uniquement les cartes de test du §4.3, dont seuls la marque et les 4 derniers chiffres sont stockés.
 **Sauvegarde** : `mariadb-dump` toutes les 5 min vers un volume dédié, rétention 24 h.
@@ -765,4 +734,3 @@ Pas de déploiement depuis la CI : les runners GitHub ne joignent pas le PC Hôt
 - [ ] `orbe.test` + CA `mkcert` installée sur ces appareils : à tester dès le premier jour
 - [ ] Résolution de `orbe.test` depuis un téléphone sur le hotspot (DNS du hotspot ou nom de type `sslip.io`) et confiance de la CA `mkcert` sur Android
 - [ ] Reconnaissance faciale par modèle pré-entraîné : à réévaluer après la v2 (§4.2)
-- [ ] Application de la v2 du modèle (`docs/mcd.md`) au schéma SQL, à auth-service et à payment-service

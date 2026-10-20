@@ -1,19 +1,15 @@
 import uuid
 
+from conftest import bearer
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.security import TokenService
 
 
-def bearer(token):
-    return {"Authorization": f"Bearer {token}"}
-
-
-def test_me_returns_the_profile_with_a_masked_phone(add_client, login, client):
+def test_me_returns_the_profile_with_a_masked_phone(add_client, token, client):
     created = add_client()
-    token = login().json()["access_token"]
 
-    response = client.get("/me", headers=bearer(token))
+    response = client.get("/me", headers=bearer(token()))
 
     assert response.status_code == 200
     assert response.json() == {
@@ -21,6 +17,8 @@ def test_me_returns_the_profile_with_a_masked_phone(add_client, login, client):
         "email": "camille@orbe.test",
         "phone_masked": "+33 6 •• •• •• 78",
         "display_name": "Camille Test",
+        "factors": ["pwd"],
+        "passkey_count": 0,
     }
 
 
@@ -46,7 +44,19 @@ def test_me_rejects_a_token_signed_with_another_key(add_client, client):
     assert client.get("/me", headers=bearer(forged)).status_code == 401
 
 
-def test_me_rejects_a_token_for_an_unknown_client(client, private_key):
-    token = TokenService(private_key, "orbe-auth", "orbe", ttl=900).issue(str(uuid.uuid4()), "x")
+def test_a_valid_signature_without_a_session_is_refused(add_client, client, private_key):
+    # Jeton correctement signé mais qui ne correspond à aucune session ouverte
+    created = add_client()
+    orphan = TokenService(private_key, "orbe-auth", "orbe", ttl=900).issue(
+        created.id, created.email, session_id=str(uuid.uuid4())
+    )
 
-    assert client.get("/me", headers=bearer(token)).status_code == 401
+    assert client.get("/me", headers=bearer(orphan)).status_code == 401
+
+
+def test_logout_revokes_the_session(add_client, token, client):
+    add_client()
+    headers = bearer(token())
+
+    assert client.post("/logout", headers=headers).status_code == 204
+    assert client.get("/me", headers=headers).status_code == 401

@@ -5,7 +5,7 @@ import pytest
 from conftest import OK_CARD
 from sqlalchemy import exc as sa_exc
 
-from app.models import Client, Transaction
+from app.models import Transaction
 
 
 def stored(db, reference):
@@ -30,8 +30,8 @@ def test_authorized_payment_credits_the_recipient(add_client, pay, db):
     assert body["status"] == "authorized"
     assert body["decline_reason"] is None
     assert body["card"] == {"brand": "visa", "last4": "4242"}
-    assert db.get(Client, recipient.id).balance_cents == 1250
-    assert db.get(Client, payer.id).balance_cents == 0
+    assert db.balance(recipient) == 1250
+    assert db.balance(payer) == 0
 
 
 def test_full_card_number_is_never_stored(add_client, pay, db):
@@ -82,7 +82,7 @@ def test_declined_test_cards(add_client, pay, db, number, reason):
     assert response.status_code == 201
     assert response.json()["status"] == "declined"
     assert response.json()["decline_reason"] == reason
-    assert db.get(Client, recipient.id).balance_cents == 0
+    assert db.balance(recipient) == 0
 
 
 @pytest.mark.parametrize(
@@ -133,7 +133,7 @@ def test_self_transfer_is_refused(add_client, pay):
     ("body", "code"),
     [
         ({"amount": 0}, "validation_error"),
-        ({"amount": 500_001}, "amount_too_large"),
+        ({"amount": 50_001}, "amount_too_large"),
         ({"currency": "USD"}, "validation_error"),
         ({"to": "pas-un-contact"}, "invalid_recipient"),
     ],
@@ -186,7 +186,7 @@ def test_replaying_the_same_key_does_not_pay_twice(add_client, pay, db):
     assert first.status_code == 201
     assert second.status_code == 200
     assert second.json()["reference"] == first.json()["reference"]
-    assert db.get(Client, recipient.id).balance_cents == 1250
+    assert db.balance(recipient) == 1250
 
 
 def test_reusing_a_key_for_another_payment_is_a_conflict(add_client, pay):
@@ -236,4 +236,4 @@ def test_pool_exhaustion_returns_503_and_leaves_a_pending_payment(app, add_clien
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "service_unavailable"
     assert response.headers["Retry-After"] == "2"
-    assert db.get(Client, recipient.id).balance_cents == 0
+    assert db.balance(recipient) == 0

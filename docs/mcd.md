@@ -4,12 +4,11 @@
 > chacun avec un compte à moindre privilège ; le moteur de remédiation la lit en lecture seule.
 > Voir aussi CADRAGE §4.2 (authentification), §4.3 (paiements) et §5 (modèle de données).
 >
-> **Statut** : modèle cible validé, **pas encore appliqué** au schéma SQL ni au code
-> (`infra/mariadb/init/01-schema.sql` décrit encore la v1).
+> **Statut** : appliqué au schéma (`infra/mariadb/init/01-schema.sql`), à auth-service et à payment-service.
 
-![MCD Orbe v2](mcd.png)
+![MCD Orbe v2](mcd.svg)
 
-Version vectorielle : [`mcd.svg`](mcd.svg).
+
 
 ## 1. Règles de gestion
 
