@@ -1,0 +1,107 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /:/host:ro
+    command:
+      - '--path.rootfs=/host'
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/promtail-config.yml
+      - /var/log:/var/log
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/promtail-config.yml
+    restart: unless-stopped
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: unless-stopped
+
+  safeline-waf:
+    image: chaitin/safeline-tengine:latest
+    container_name: safeline-waf
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - UPSTREAM_DASHBOARD=http://oorbe-dashboard:8080
+      - UPSTREAM_INTERFACE=http://oorbe-interface:8081
+      - UPSTREAM_BACK=http://oorbe-back:8090
+    restart: unless-stopped
+    #depends_on:
+     # - oorbe-dashboard
+     # - oorbe-interface
+     # - oorbe-back
+
+  #oorbe-dashboard:
+    #build:
+     # context: ..
+     # dockerfile: ./dockerfiles/Dockerfile-dashboard
+    #container_name: oorbe-dashboard
+    #expose:
+    #  - "8080"
+   # restart: unless-stopped
+
+  #oorbe-interface:
+   # build:
+     # context: ..
+     # dockerfile: ./dockerfiles/Dockerfile-interface
+    #container_name: oorbe-interface
+    #expose:
+     # - "8081"
+    #restart: unless-stopped
+
+  #oorbe-back:
+   # build:
+    #  context: ..
+     # dockerfile: ./dockerfiles/Dockerfile-back
+    #container_name: oorbe-back
+    #expose:
+     # - "8090"
+    #restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  loki_data:
+  grafana_data:
