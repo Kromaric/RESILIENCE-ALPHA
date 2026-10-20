@@ -175,11 +175,39 @@ services:
      # - "8090"
     #restart: unless-stopped
 
+  mariadb:
+    image: mariadb:latest
+    container_name: mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: oorbe_db
+      MYSQL_USER: oorbe
+      MYSQL_PASSWORD: admin
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  vault:
+    image: hashicorp/vault:1.15.4
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "root"
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
+    command: server -dev
+    restart: unless-stopped
+
 volumes:
   prometheus_data:
   loki_data:
   grafana_data:
   mariadb_data:
+  vault_data:
 
 secrets:
   db_root_password:        { file: ../secrets/db_root_password }
