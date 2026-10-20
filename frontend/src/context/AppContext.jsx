@@ -1,13 +1,58 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AppContext } from './AppContextInstance';
-import { checkBackendHealth, authenticateWithPin, sendPaymentApi, createPaymentRequestApi } from '../services/api';
+import {
+  checkBackendHealth,
+  authenticateWithPin,
+  sendPaymentApi,
+  createPaymentRequestApi,
+  getAccountInfo,
+  getContacts,
+  getTransactions,
+  getQrCode,
+} from '../services/api';
 
-// Initial registered contacts list on Orbe
+// Initial registered contacts list on Orbe matching backend seed
 const INITIAL_CONTACTS = [
-  { id: '1', initials: 'LM', name: 'Léa Martin', phone: '+33 6 •• •• 12 34', rawPhone: '+33612341234', email: 'lea.martin@orbe.test', defaultAmount: '12,50', defaultReason: 'Ciné' },
-  { id: '2', initials: 'HB', name: 'Hugo Bernard', phone: '+33 7 •• •• 56 78', rawPhone: '+33756785678', email: 'hugo.bernard@orbe.test', defaultAmount: '25,00', defaultReason: 'Pizza vendredi' },
-  { id: '3', initials: 'IP', name: 'Inès Petit', phone: '+33 6 •• •• 90 11', rawPhone: '+33690119011', email: 'ines.petit@orbe.test', defaultAmount: '15,00', defaultReason: 'Cadeau Nathan' },
-  { id: '4', initials: 'NM', name: 'Nathan Moreau', phone: '+33 6 •• •• 22 45', rawPhone: '+33622452245', email: 'nathan.moreau@orbe.test', defaultAmount: '8,00', defaultReason: 'Covoiturage' },
+  {
+    id: '22222222-2222-2222-2222-222222222222',
+    initials: 'LM',
+    name: 'Léa Martin',
+    phone: '+33 6 •• •• 12 34',
+    rawPhone: '+33612345677',
+    email: 'lea@orbe.test',
+    defaultAmount: '12,50',
+    defaultReason: 'Ciné',
+  },
+  {
+    id: '33333333-3333-3333-3333-333333333333',
+    initials: 'HB',
+    name: 'Hugo Bernard',
+    phone: '+33 7 •• •• 56 78',
+    rawPhone: '+33612345676',
+    email: 'hugo@orbe.test',
+    defaultAmount: '25,00',
+    defaultReason: 'Pizza vendredi',
+  },
+  {
+    id: '3',
+    initials: 'IP',
+    name: 'Inès Petit',
+    phone: '+33 6 •• •• 90 11',
+    rawPhone: '+33690119011',
+    email: 'ines.petit@orbe.test',
+    defaultAmount: '15,00',
+    defaultReason: 'Cadeau Nathan',
+  },
+  {
+    id: '4',
+    initials: 'NM',
+    name: 'Nathan Moreau',
+    phone: '+33 6 •• •• 22 45',
+    rawPhone: '+33622452245',
+    email: 'nathan.moreau@orbe.test',
+    defaultAmount: '8,00',
+    defaultReason: 'Covoiturage',
+  },
 ];
 
 // Initial mock transactions list matching specifications
@@ -122,19 +167,20 @@ export function AppProvider({ children }) {
   const [pending2FA, setPending2FA] = useState(null);
 
   // User Profile
-  const [user] = useState({
+  const [user, setUser] = useState({
     name: 'Camille Test',
     email: 'camille@orbe.test',
-    phone: '+33 6 •• •• 01 42',
+    phone: '+33 6 •• •• •• 78',
     accountMasked: 'FR76 •••• •••• 0142',
     bankLabel: 'Banque Démo',
     initials: 'CT',
   });
 
   const [authToken, setAuthToken] = useState('demo-token');
+  const [qrData, setQrData] = useState(null);
 
   // Contacts & Active Transaction Setup
-  const [contacts] = useState(INITIAL_CONTACTS);
+  const [contacts, setContacts] = useState(INITIAL_CONTACTS);
   const [selectedContact, setSelectedContact] = useState(INITIAL_CONTACTS[0]);
   const [sendAmount, setSendAmount] = useState('12,50');
   const [sendReason, setSendReason] = useState('Ciné');
@@ -205,6 +251,45 @@ export function AppProvider({ children }) {
     }
   };
 
+  // Helper to synchronize data from live backend
+  const syncBackendData = useCallback(async (token) => {
+    try {
+      const [accountResult, contactsResult, txResult, qrResult] = await Promise.all([
+        getAccountInfo(token),
+        getContacts(token),
+        getTransactions(token),
+        getQrCode(token),
+      ]);
+
+      if (accountResult?.payout_account) {
+        setUser((prev) => ({
+          ...prev,
+          bankLabel: accountResult.payout_account.label || prev.bankLabel,
+          accountMasked: `FR76 •••• •••• ${accountResult.payout_account.iban_last4 || '0142'}`,
+        }));
+      }
+
+      if (Array.isArray(contactsResult) && contactsResult.length > 0) {
+        setContacts(contactsResult);
+        setSelectedContact(contactsResult[0]);
+      }
+
+      if (Array.isArray(txResult) && txResult.length > 0) {
+        setTransactions((prev) => {
+          const remoteIds = new Set(txResult.map((t) => t.id));
+          const remainingPrev = prev.filter((t) => !remoteIds.has(t.id));
+          return [...txResult, ...remainingPrev];
+        });
+      }
+
+      if (qrResult) {
+        setQrData(qrResult);
+      }
+    } catch (err) {
+      console.warn('Backend data synchronization fallback:', err);
+    }
+  }, []);
+
   // Execute payment
   const executePayment = useCallback(async () => {
     if (isIncident) {
@@ -217,14 +302,16 @@ export function AppProvider({ children }) {
     try {
       await sendPaymentApi(
         {
+          recipientId: selectedContact.id.length === 36 ? selectedContact.id : undefined,
           recipient: selectedContact.rawPhone || selectedContact.email,
           amount_cents: amountCents,
           description: sendReason,
         },
         authToken
       );
-    } catch {
-      // Handled gracefully via resilience fallback
+    } catch (err) {
+      // In demo resilience mode, handled gracefully with fallback logging
+      console.warn('Payment executed via resilience fallback:', err.message);
     }
 
     // Format current time HH:MM
@@ -268,15 +355,35 @@ export function AppProvider({ children }) {
   const on2FASuccess = useCallback(async () => {
     if (pending2FA?.type === 'login') {
       const authResult = await authenticateWithPin(pending2FA.pin);
-      setAuthToken(authResult.access_token);
+      const token = authResult.access_token;
+      setAuthToken(token);
+
+      if (authResult.client) {
+        setUser((prev) => ({
+          ...prev,
+          name: authResult.client.name,
+          email: authResult.client.email,
+          phone: authResult.client.phone,
+          initials: authResult.client.name
+            .split(' ')
+            .map((n) => n[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2),
+        }));
+      }
+
       setPending2FA(null);
       setCurrentScreen('HOME');
       setActiveTab('home');
+
+      // Fetch dynamic backend resources
+      syncBackendData(token);
     } else if (pending2FA?.type === 'payment') {
       setPending2FA(null);
       await executePayment();
     }
-  }, [pending2FA, executePayment]);
+  }, [pending2FA, executePayment, syncBackendData]);
 
   // 2FA Cancel callback
   const on2FACancel = useCallback(() => {
@@ -371,6 +478,7 @@ export function AppProvider({ children }) {
         on2FACancel,
         pending2FA,
         authToken,
+        qrData,
         executePayment,
         executeCreateRequest,
       }}

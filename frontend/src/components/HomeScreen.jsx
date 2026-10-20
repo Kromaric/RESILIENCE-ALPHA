@@ -9,39 +9,10 @@ import { useApp } from '../context/useApp';
  * No emojis used.
  */
 export default function HomeScreen() {
-  const { setCurrentScreen, setReceiveSubTab, transactions, navigateToTab } = useApp();
+  const { user, setCurrentScreen, setReceiveSubTab, transactions, navigateToTab } = useApp();
 
-  // Take the 4 most recent transactions matching specifications
-  const recentTransactions = [
-    transactions.find((t) => t.id === 'tx_1') || {
-      initials: 'LM',
-      counterparty: 'Léa Martin',
-      subtitle: 'Ciné · 10:44',
-      amountFormatted: '− 12,50 €',
-      status: 'Envoyé',
-    },
-    transactions.find((t) => t.id === 'tx_3') || {
-      initials: 'HB',
-      counterparty: 'Hugo Bernard',
-      subtitle: 'Pizza vendredi · 09:12',
-      amountFormatted: '+ 25,00 €',
-      status: 'Reçu',
-    },
-    transactions.find((t) => t.id === 'tx_5') || {
-      initials: 'IP',
-      counterparty: 'Inès Petit',
-      subtitle: 'Cadeau Nathan · Hier',
-      amountFormatted: '− 15,00 €',
-      status: 'Envoyé',
-    },
-    transactions.find((t) => t.id === 'tx_6') || {
-      initials: 'NM',
-      counterparty: 'Nathan Moreau',
-      subtitle: 'Covoiturage · Hier',
-      amountFormatted: '+ 8,00 €',
-      status: 'Reçu',
-    },
-  ];
+  // Take the 4 most recent transactions
+  const recentTransactions = transactions.slice(0, 4);
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto no-scrollbar">
@@ -53,7 +24,7 @@ export default function HomeScreen() {
         <div>
           <p className="text-[#55636a] text-sm">Bonjour</p>
           <h1 className="text-2xl font-semibold text-[#0f1a1d] tracking-tight">
-            Camille Test
+            {user.name}
           </h1>
         </div>
 
@@ -67,12 +38,12 @@ export default function HomeScreen() {
               Compte lié
             </span>
             <span className="bg-[#dcecef] text-[#0a4552] rounded px-1.5 py-0.5 text-xs font-medium">
-              Banque Démo
+              {user.bankLabel || 'Banque Démo'}
             </span>
           </div>
 
           <div className="font-mono text-[15px] tracking-wider font-medium">
-            FR76 •••• •••• 0142
+            {user.accountMasked || 'FR76 •••• •••• 0142'}
           </div>
 
           <p className="text-[13px] opacity-85 leading-snug m-0">
@@ -89,7 +60,7 @@ export default function HomeScreen() {
             className="bg-white border border-[#d5dcdf] rounded-xl p-3 flex flex-col items-center justify-center gap-2 hover:bg-[#fafaf9] active:scale-[0.98] transition-all shadow-xs cursor-pointer group"
           >
             <div className="w-11 h-11 rounded-full bg-[#0e5a6b] text-white flex items-center justify-center shadow-xs group-hover:bg-[#0a4552] transition-colors">
-              <ArrowUpRight className="w-5 h-5 stroke-[2.5]" />
+              <ArrowUpRight className="w-5 h-5 stroke-[2.5] stroke-current" />
             </div>
             <span className="text-xs font-semibold text-[#0f1a1d]">Envoyer</span>
           </button>
@@ -104,7 +75,7 @@ export default function HomeScreen() {
             className="bg-white border border-[#d5dcdf] rounded-xl p-3 flex flex-col items-center justify-center gap-2 hover:bg-[#fafaf9] active:scale-[0.98] transition-all shadow-xs cursor-pointer group"
           >
             <div className="w-11 h-11 rounded-full bg-[#dcecef] text-[#0a4552] flex items-center justify-center shadow-xs group-hover:bg-[#c9e3e7] transition-colors">
-              <ArrowDownLeft className="w-5 h-5 stroke-[2.5]" />
+              <ArrowDownLeft className="w-5 h-5 stroke-[2.5] stroke-current" />
             </div>
             <span className="text-xs font-semibold text-[#0f1a1d]">Demander</span>
           </button>
@@ -119,7 +90,7 @@ export default function HomeScreen() {
             className="bg-white border border-[#d5dcdf] rounded-xl p-3 flex flex-col items-center justify-center gap-2 hover:bg-[#fafaf9] active:scale-[0.98] transition-all shadow-xs cursor-pointer group"
           >
             <div className="w-11 h-11 rounded-full bg-[#dcecef] text-[#0a4552] flex items-center justify-center shadow-xs group-hover:bg-[#c9e3e7] transition-colors">
-              <QrCode className="w-5 h-5 stroke-[2.5]" />
+              <QrCode className="w-5 h-5 stroke-[2.5] stroke-current" />
             </div>
             <span className="text-xs font-semibold text-[#0f1a1d]">Mon QR</span>
           </button>
@@ -151,19 +122,39 @@ export default function HomeScreen() {
                   <div className="w-9 h-9 rounded-full bg-[#dcecef] text-[#0a4552] font-semibold text-xs flex items-center justify-center shrink-0">
                     {tx.initials}
                   </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-semibold text-[#0f1a1d] truncate">
+                  <div className="min-w-0">
+                    <p className="font-medium text-[#0f1a1d] truncate m-0 text-sm">
                       {tx.counterparty}
-                    </span>
-                    <span className="text-xs text-[#55636a] truncate">{tx.subtitle}</span>
+                    </p>
+                    <p className="text-xs text-[#55636a] truncate m-0 mt-0.5">
+                      {tx.subtitle}
+                    </p>
                   </div>
                 </div>
 
                 <div className="text-right shrink-0">
-                  <div className="font-mono font-medium text-[14px] tabular-nums text-[#0f1a1d]">
+                  <p
+                    className={`font-mono font-medium text-sm m-0 ${
+                      tx.isFailed
+                        ? 'text-[#55636a]'
+                        : tx.type === 'received'
+                        ? 'text-[#1e7a45]'
+                        : 'text-[#0f1a1d]'
+                    }`}
+                  >
                     {tx.amountFormatted}
-                  </div>
-                  <div className="text-[11px] text-[#55636a]">{tx.status}</div>
+                  </p>
+                  <span
+                    className={`text-[11px] font-medium ${
+                      tx.isFailed
+                        ? 'text-[#c81e1e]'
+                        : tx.type === 'refund'
+                        ? 'text-[#55636a]'
+                        : 'text-[#1e7a45]'
+                    }`}
+                  >
+                    {tx.status}
+                  </span>
                 </div>
               </div>
             ))}

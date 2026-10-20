@@ -91,7 +91,7 @@ export default function ReceiveScreen() {
               </div>
 
               <p className="text-xs text-[#55636a] mt-3 max-w-[270px] leading-relaxed">
-                Faites scanner ce code : l'argent arrive sur votre compte Banque Démo •••• 0142.
+                Faites scanner ce code : l'argent arrive sur votre compte {user.bankLabel || 'Banque Démo'} {user.accountMasked ? user.accountMasked.slice(-8) : '•••• 0142'}.
               </p>
             </div>
 
@@ -115,11 +115,6 @@ export default function ReceiveScreen() {
                 <span>Scanner un QR</span>
               </button>
             </div>
-
-            {/* Disclaimer Caption */}
-            <p className="text-[12px] text-[#55636a] text-center select-none">
-              QR fictif, régénéré toutes les 5 min.
-            </p>
           </div>
         )}
 
@@ -127,20 +122,20 @@ export default function ReceiveScreen() {
         {receiveSubTab === 'request' && (
           <form
             onSubmit={handleRequestSubmit}
-            className="bg-white border border-[#d5dcdf] rounded-xl p-5 flex flex-col gap-4 shadow-sm"
+            className="bg-white border border-[#d5dcdf] rounded-2xl p-5 shadow-sm flex flex-col gap-4"
           >
-            <div className="flex flex-col gap-1">
+            <div>
               <label
-                htmlFor="req-payer"
-                className="text-xs font-semibold text-[#55636a] uppercase tracking-wider"
+                htmlFor="payer-select"
+                className="block text-xs font-semibold text-[#0f1a1d] mb-1.5"
               >
                 À qui demander ?
               </label>
               <select
-                id="req-payer"
+                id="payer-select"
                 value={selectedPayerId}
                 onChange={(e) => setSelectedPayerId(e.target.value)}
-                className="h-11 px-3 bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl text-sm font-medium text-[#0f1a1d] focus:border-[#0e5a6b] focus:outline-none"
+                className="w-full bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl px-3 py-2.5 text-sm font-medium text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b]"
               >
                 {contacts.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -150,48 +145,51 @@ export default function ReceiveScreen() {
               </select>
             </div>
 
-            <div className="flex flex-col gap-1">
+            <div>
               <label
-                htmlFor="req-amount"
-                className="text-xs font-semibold text-[#55636a] uppercase tracking-wider"
+                htmlFor="request-amount"
+                className="block text-xs font-semibold text-[#0f1a1d] mb-1.5"
               >
                 Montant (€)
               </label>
-              <input
-                id="req-amount"
-                type="text"
-                value={requestAmount}
-                onChange={(e) => setRequestAmount(e.target.value)}
-                placeholder="15,00"
-                className="h-11 px-3 font-mono text-lg font-semibold bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl text-[#0f1a1d] focus:border-[#0e5a6b] focus:outline-none"
-                required
-              />
+              <div className="relative">
+                <input
+                  id="request-amount"
+                  type="text"
+                  value={requestAmount}
+                  onChange={(e) => setRequestAmount(e.target.value)}
+                  placeholder="0,00"
+                  className="w-full bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl px-3 py-2.5 text-lg font-mono font-medium text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b]"
+                />
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 font-mono text-[#55636a]">
+                  €
+                </span>
+              </div>
             </div>
 
-            <div className="flex flex-col gap-1">
+            <div>
               <label
-                htmlFor="req-reason"
-                className="text-xs font-semibold text-[#55636a] uppercase tracking-wider"
+                htmlFor="request-reason"
+                className="block text-xs font-semibold text-[#0f1a1d] mb-1.5"
               >
                 Motif
               </label>
               <input
-                id="req-reason"
+                id="request-reason"
                 type="text"
                 value={requestReason}
                 onChange={(e) => setRequestReason(e.target.value)}
-                placeholder="Courses, restaurant..."
-                className="h-11 px-3 bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl text-sm font-medium text-[#0f1a1d] focus:border-[#0e5a6b] focus:outline-none"
-                required
+                placeholder="Ex : Courses, Restaurant..."
+                className="w-full bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl px-3 py-2.5 text-sm font-medium text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b]"
               />
             </div>
 
             <button
               type="submit"
               disabled={isSubmitting}
-              className="mt-2 w-full h-12 rounded-xl bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-[15px] flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
+              className="mt-2 w-full bg-[#0e5a6b] hover:bg-[#0a4552] active:scale-[0.99] text-white font-medium py-3 rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
             >
-              {isSubmitting ? 'Envoi...' : `Demander ${requestAmount} €`}
+              <span>Envoyer la demande</span>
             </button>
           </form>
         )}
