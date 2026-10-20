@@ -41,6 +41,10 @@ docker compose -f docker-compose.dev.yml up -d --build
 | payment-service (Swagger) | http://localhost:8002/docs |
 | MariaDB (client SQL) | `localhost:3307`, base `orbe` ; mot de passe root dans `secrets/db_root_password` |
 
+Les images sont construites à partir de `dockerfiles/` (contexte : racine du dépôt) :
+`Dockerfile-auth`, `Dockerfile-payment` et `Dockerfile-mariadb` (schéma, comptes et configuration
+intégrés). Ce sont les mêmes que dans la pile complète `infra/docker-compose.yml`.
+
 ### Comptes de démo
 
 Mot de passe commun : `demo-password`.

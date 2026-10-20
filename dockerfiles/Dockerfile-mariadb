@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1
+# Base Orbe (CADRAGE §5, docs/mcd.md) — contexte de build : racine du dépôt
+#   docker build -f dockerfiles/Dockerfile-mariadb -t orbe/mariadb .
+#
+# Le schéma, les comptes à moindre privilège et la configuration sont intégrés à l'image ;
+# ils ne s'appliquent qu'au premier démarrage (volume de données vide).
+# Les mots de passe ne sont PAS dans l'image : ils sont lus au démarrage dans des secrets
+# Docker (variables MARIADB_*_PASSWORD_FILE et ORBE_*_API_KEY_FILE).
+# Les données de démo ne sont pas intégrées : docker-compose.dev.yml les monte à part.
+
+FROM mariadb:11.4
+COPY infra/mariadb/conf.d/orbe.cnf /etc/mysql/conf.d/orbe.cnf
+COPY infra/mariadb/init/ /docker-entrypoint-initdb.d/

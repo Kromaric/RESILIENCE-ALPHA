@@ -1,0 +1,27 @@
+# Contexte de build = racine du dépôt (Dockerfiles dans dockerfiles/).
+# Indispensable : un « COPY . . » embarquerait sinon les secrets dans l'image.
+
+# Secrets et fichiers locaux
+secrets/
+secrets*.zip
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+.claude/
+
+# Git et outillage
+.git/
+.github/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.egg-info/
+**/node_modules/
+
+# Documentation et tests (inutiles dans les images)
+docs/
+**/tests/
+*.md
+!**/README.md

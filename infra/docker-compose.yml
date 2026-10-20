@@ -1,0 +1,192 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /:/host:ro
+    command:
+      - '--path.rootfs=/host'
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/promtail-config.yml
+      - /var/log:/var/log
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/promtail-config.yml
+    restart: unless-stopped
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: unless-stopped
+
+  safeline-waf:
+    image: chaitin/safeline-tengine:latest
+    container_name: safeline-waf
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - UPSTREAM_DASHBOARD=http://oorbe-dashboard:8080
+      - UPSTREAM_INTERFACE=http://oorbe-interface:8081
+      - UPSTREAM_BACK=http://oorbe-back:8090
+    restart: unless-stopped
+    #depends_on:
+     # - oorbe-dashboard
+     # - oorbe-interface
+     # - oorbe-back
+
+  # --- Base et services métier (auth-service, payment-service) --------------------------
+  # Remplacent « oorbe-back » : deux services FastAPI, voir CADRAGE §4.2 et §4.3.
+  # Aucun port publié : l'accès passe par le WAF (/api/auth → auth-service:8001,
+  # /api/payments → payment-service:8002). Secrets : ../secrets/ (scripts/init_dev_secrets.py).
+  mariadb:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-mariadb
+    container_name: mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+      MARIADB_AUTH_SVC_PASSWORD_FILE: /run/secrets/auth_db_password
+      MARIADB_PAYMENT_SVC_PASSWORD_FILE: /run/secrets/payment_db_password
+      MARIADB_REMEDIATION_RO_PASSWORD_FILE: /run/secrets/remediation_db_password
+      MARIADB_EXPORTER_PASSWORD_FILE: /run/secrets/exporter_db_password
+      ORBE_PROBE_API_KEY_FILE: /run/secrets/probe_api_key
+    secrets:
+      - db_root_password
+      - auth_db_password
+      - payment_db_password
+      - remediation_db_password
+      - exporter_db_password
+      - probe_api_key
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      retries: 30
+    mem_limit: 512m
+    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-auth
+    container_name: auth-service
+    environment:
+      AUTH_DB_HOST: mariadb
+      AUTH_DB_PASSWORD_FILE: /run/secrets/auth_db_password
+      AUTH_JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
+    secrets: [auth_db_password, jwt_private_key]
+    depends_on:
+      mariadb: { condition: service_healthy }
+    expose:
+      - "8001"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-payment
+    container_name: payment-service
+    environment:
+      PAYMENT_DB_HOST: mariadb
+      PAYMENT_DB_PASSWORD_FILE: /run/secrets/payment_db_password
+      PAYMENT_JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public_key
+    secrets: [payment_db_password, jwt_public_key]
+    depends_on:
+      mariadb: { condition: service_healthy }
+    expose:
+      - "8002"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    restart: unless-stopped
+
+  #oorbe-dashboard:
+    #build:
+     # context: ..
+     # dockerfile: ./dockerfiles/Dockerfile-dashboard
+    #container_name: oorbe-dashboard
+    #expose:
+    #  - "8080"
+   # restart: unless-stopped
+
+  #oorbe-interface:
+   # build:
+     # context: ..
+     # dockerfile: ./dockerfiles/Dockerfile-interface
+    #container_name: oorbe-interface
+    #expose:
+     # - "8081"
+    #restart: unless-stopped
+
+  #oorbe-back:
+   # build:
+    #  context: ..
+     # dockerfile: ./dockerfiles/Dockerfile-back
+    #container_name: oorbe-back
+    #expose:
+     # - "8090"
+    #restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+  mariadb_data:
+
+secrets:
+  db_root_password:        { file: ../secrets/db_root_password }
+  auth_db_password:        { file: ../secrets/auth_db_password }
+  payment_db_password:     { file: ../secrets/payment_db_password }
+  remediation_db_password: { file: ../secrets/remediation_db_password }
+  exporter_db_password:    { file: ../secrets/exporter_db_password }
+  probe_api_key:           { file: ../secrets/probe_api_key }
+  jwt_private_key:         { file: ../secrets/jwt_private_key.pem }
+  jwt_public_key:          { file: ../secrets/jwt_public_key.pem }
