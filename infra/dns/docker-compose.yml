@@ -1,0 +1,15 @@
+name: oorbe-dns
+
+services:
+  dns:
+    image: dockurr/dnsmasq:latest
+    container_name: oorbe-dns
+    cap_add:
+      - NET_ADMIN
+    ports:
+      # Lié à l'IP de la machine : évite le conflit avec le résolveur local (127.0.0.53) sur le port 53
+      - "53:53/udp"
+      - "53:53/tcp"
+    volumes:
+      - ./dnsmasq.conf:/etc/dnsmasq.conf:ro
+    restart: unless-stopped
