@@ -67,7 +67,6 @@ services:
     environment:
       - UPSTREAM_DASHBOARD=http://oorbe-dashboard:8080
       - UPSTREAM_INTERFACE=http://oorbe-interface:8081
-      - UPSTREAM_BACK=http://oorbe-back:8090
     restart: unless-stopped
     depends_on:
       - oorbe-auth-service
@@ -81,6 +80,13 @@ services:
       context: ..
       dockerfile: ./dockerfiles/Dockerfile-auth
     container_name: oorbe-auth-service
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+        reservations:
+          memory: 256M       # RAM minimale garantie par le système
     environment:
       AUTH_DB_HOST: mariadb
       AUTH_DB_PASSWORD_FILE: /run/secrets/auth_db_password
@@ -102,6 +108,13 @@ services:
       context: ..
       dockerfile: ./dockerfiles/Dockerfile-payment
     container_name: oorbe-payment-service
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+        reservations:
+          memory: 256M # RAM minimale garantie par le système
     environment:
       PAYMENT_DB_HOST: mariadb
       PAYMENT_DB_PASSWORD_FILE: /run/secrets/payment_db_password
