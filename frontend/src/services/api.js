@@ -44,8 +44,7 @@ async function fetchWithTimeout(url, options = {}) {
  * Health check service.
  * Probes the backend to determine if services are operational or in incident state.
  *
- * @returns {Promise<{ operational: boolean, detail: string }>}
- */
+ * @returns {Promise<{ operational: boolean, detail: string }>}\n */
 export async function checkBackendHealth() {
   try {
     // Try payment service readiness endpoint first
@@ -71,57 +70,169 @@ export async function checkBackendHealth() {
 }
 
 /**
+ * Perform password login step against /login.
+ *
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<{ mfa_required: boolean, session_id: string, face_challenge?: { direction: string, frames: number, interval_ms: number }, token?: { access_token: string, expires_in: number, factors: string[] }, face_enrollment_required?: boolean }>}
+ */
+export async function loginWithPassword(email, password) {
+  const res = await fetchWithTimeout(`${AUTH_URL}/login`, {
+    method: 'POST',
+    body: JSON.stringify({
+      email,
+      password,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const message = err.detail?.message || 'Identifiants invalides';
+    const errorObj = new Error(message);
+    errorObj.code = err.detail?.code || 'invalid_credentials';
+    errorObj.status = res.status;
+    throw errorObj;
+  }
+
+  return await res.json();
+}
+
+/**
+ * Complete biometric 2FA step against /login/face.
+ *
+ * @param {string} sessionId
+ * @param {string[]} frames Base64 encoded JPEG strings (raw base64, without data: URI prefix)
+ * @returns {Promise<{ access_token: string, token_type: string, expires_in: number, factors: string[] }>}
+ */
+export async function loginFace(sessionId, frames) {
+  const res = await fetchWithTimeout(`${AUTH_URL}/login/face`, {
+    method: 'POST',
+    body: JSON.stringify({
+      session_id: sessionId,
+      frames,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const message = err.detail?.message || 'Visage non reconnu';
+    const errorObj = new Error(message);
+    errorObj.code = err.detail?.code || 'second_factor_failed';
+    errorObj.status = res.status;
+    throw errorObj;
+  }
+
+  return await res.json();
+}
+
+/**
+ * Enroll user facial biometric data with explicit GDPR consent.
+ *
+ * @param {string[]} frames Base64 encoded JPEG strings
+ * @param {string} token Bearer access token
+ * @returns {Promise<{ enrolled: boolean, templates: number, model: string, consent_at: string }>}
+ */
+export async function enrollFace(frames, token) {
+  const res = await fetchWithTimeout(`${AUTH_URL}/face/enroll`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      consent: true,
+      frames,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const message = err.detail?.message || "Échec de l'enregistrement du visage";
+    const errorObj = new Error(message);
+    errorObj.code = err.detail?.code || 'enrollment_failed';
+    errorObj.status = res.status;
+    throw errorObj;
+  }
+
+  return await res.json();
+}
+
+/**
+ * Fetch current biometric enrollment status.
+ *
+ * @param {string} token Bearer access token
+ * @returns {Promise<{ enrolled: boolean, templates: number, model: string | null, consent_at: string | null }>}
+ */
+export async function getFaceEnrollmentStatus(token) {
+  const res = await fetchWithTimeout(`${AUTH_URL}/face`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail?.message || 'Statut biométrique indisponible');
+  }
+
+  return await res.json();
+}
+
+/**
+ * Helper to fetch /me user profile details.
+ *
+ * @param {string} token
+ * @returns {Promise<{ client_id: string, email: string, phone_masked: string, display_name: string, factors: string[] } | null>}
+ */
+export async function getMeProfile(token) {
+  try {
+    const res = await fetchWithTimeout(`${AUTH_URL}/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+  return null;
+}
+
+/**
  * Attempt authentication using PIN or fallback to demo account.
+ * Maintained for backward compatibility or simulated fallback.
  *
  * @param {string} pin
  * @returns {Promise<{ access_token: string, session_id?: string, client: { name: string, email: string, phone: string, accountMasked?: string } }>}
  */
 export async function authenticateWithPin(pin) {
   try {
-    const res = await fetchWithTimeout(`${AUTH_URL}/login`, {
-      method: 'POST',
-      body: JSON.stringify({
-        email: 'camille@orbe.test',
-        password: pin ? 'demo-password' : 'demo-password',
-      }),
-    });
+    const data = await loginWithPassword('camille@orbe.test', pin ? 'demo-password' : 'demo-password');
+    const accessToken = data.token?.access_token;
+    let clientProfile = {
+      name: 'Camille Test',
+      email: 'camille@orbe.test',
+      phone: '+33 6 •• •• •• 78',
+    };
 
-    if (res.ok) {
-      const data = await res.json();
-      const accessToken = data.token?.access_token || data.access_token;
-      let clientProfile = {
-        name: 'Camille Test',
-        email: 'camille@orbe.test',
-        phone: '+33 6 •• •• •• 78',
-      };
-
-      // Try fetching profile details with the issued token
-      if (accessToken) {
-        try {
-          const meRes = await fetchWithTimeout(`${AUTH_URL}/me`, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
-          if (meRes.ok) {
-            const meData = await meRes.json();
-            clientProfile = {
-              name: meData.display_name || 'Camille Test',
-              email: meData.email || 'camille@orbe.test',
-              phone: meData.phone_masked || '+33 6 •• •• •• 78',
-            };
-          }
-        } catch {
-          // Keep default profile if /me fails
-        }
+    if (accessToken) {
+      const meData = await getMeProfile(accessToken);
+      if (meData) {
+        clientProfile = {
+          name: meData.display_name || 'Camille Test',
+          email: meData.email || 'camille@orbe.test',
+          phone: meData.phone_masked || '+33 6 •• •• •• 78',
+        };
       }
-
-      return {
-        access_token: accessToken || 'fallback-demo-jwt-token',
-        session_id: data.session_id,
-        client: clientProfile,
-      };
     }
+
+    return {
+      access_token: accessToken || 'fallback-demo-jwt-token',
+      session_id: data.session_id,
+      client: clientProfile,
+    };
   } catch {
     // Fallback smoothly to demo session
   }
@@ -137,55 +248,51 @@ export async function authenticateWithPin(pin) {
 }
 
 /**
- * Verify biometric 2FA face data against backend.
- * Falls back to realistic simulated biometric analysis if endpoint is unavailable.
- * If in incident mode, simulates 502 error as specified.
+ * Helper generating simulated face frames matching auth-service FakeFaceEngine format.
+ * Used for demo bypass or simulated tests.
  *
- * @param {string} imageBase64
- * @param {string} token
- * @param {boolean} isIncident
- * @returns {Promise<{ success: boolean, confidence?: number, error?: string }>}
+ * @param {string} identity
+ * @param {string} direction 'left' | 'right'
+ * @param {number} count
+ * @returns {string[]}
  */
-export async function verifyFace2FA(imageBase64, token, isIncident = false) {
-  if (isIncident) {
-    // Simulated delay before returning 502 incident error
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    return {
-      success: false,
-      error: "Service d'authentification biométrique indisponible (Erreur 502)",
+export function generateSimulatedLoginFrames(identity = 'camille', direction = 'left', count = 8) {
+  const sign = direction === 'left' ? 1 : -1;
+  const frames = [];
+  for (let i = 0; i < count; i++) {
+    const yaw = count > 1 ? sign * (20 * i / (count - 1)) : sign * 15;
+    const data = {
+      identity,
+      yaw: Math.round(yaw * 10) / 10,
+      quality: 0.9,
+      n: 100 + i,
     };
+    frames.push(btoa(JSON.stringify(data)));
   }
+  return frames;
+}
 
-  try {
-    const res = await fetchWithTimeout(`${AUTH_URL}/verify-face`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        image_base64: imageBase64,
-        client_name: 'Camille Test',
-      }),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        success: true,
-        confidence: data.confidence || 98.4,
-      };
-    }
-  } catch {
-    // Graceful simulated fallback when endpoint is unavailable
+/**
+ * Helper generating simulated enrollment frames matching FakeFaceEngine format.
+ * Sweeps from -30deg to +30deg.
+ *
+ * @param {string} identity
+ * @param {number} count
+ * @returns {string[]}
+ */
+export function generateSimulatedEnrollFrames(identity = 'camille', count = 16) {
+  const frames = [];
+  for (let i = 0; i < count; i++) {
+    const yaw = -30 + (60 * i / (count - 1));
+    const data = {
+      identity,
+      yaw: Math.round(yaw * 10) / 10,
+      quality: 0.9,
+      n: i,
+    };
+    frames.push(btoa(JSON.stringify(data)));
   }
-
-  // Realistic 1.5s simulated image analysis delay
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-
-  return {
-    success: true,
-    confidence: 98.4,
-  };
+  return frames;
 }
 
 /**
