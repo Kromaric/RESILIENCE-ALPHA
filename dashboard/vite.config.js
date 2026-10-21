@@ -4,4 +4,11 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    // En dev, /bo/* est relayé vers bo-api (docker-compose.dev.yml), comme le fera le Nginx
+    // du dashboard en démonstration : même origine, pas de CORS.
+    proxy: {
+      '/bo': 'http://localhost:8006',
+    },
+  },
 })

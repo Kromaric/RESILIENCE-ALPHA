@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Activity, FileText, MessageSquare, ArrowUpRight } from 'lucide-react'
+import { Activity, FileText, MessageSquare, ArrowUpRight, LogOut } from 'lucide-react'
 import { conversations } from '../data/assistant'
+import { useAuth } from '../auth/AuthContext'
 
 const espace = [
   { to: '/', label: 'Supervision', icon: Activity },
@@ -25,6 +26,7 @@ function SectionLabel({ children }) {
 export default function Sidebar() {
   const { pathname } = useLocation()
   const onAssistant = pathname === '/assistant'
+  const { operator, logout } = useAuth()
 
   return (
     <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-line bg-bg p-4 md:sticky md:top-0 md:h-screen">
@@ -87,7 +89,22 @@ export default function Sidebar() {
         </>
       )}
 
-      <div className="mt-auto rounded-md border border-line p-3 text-xs">
+      <div className="mt-auto flex items-center justify-between gap-2 px-1 pb-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs text-gray-200">{operator.display_name}</p>
+          <p className="text-[11px] text-muted">{operator.role}</p>
+        </div>
+        <button
+          onClick={logout}
+          title="Se déconnecter"
+          aria-label="Se déconnecter"
+          className="rounded-md p-1.5 text-muted hover:bg-surface hover:text-gray-200"
+        >
+          <LogOut size={14} />
+        </button>
+      </div>
+
+      <div className="rounded-md border border-line p-3 text-xs">
         <p className="text-muted">Environnement de démo</p>
         <p className="mt-1 font-mono text-gray-200">PC Hôte · 192.168.137.1</p>
         <p className="mt-1 text-muted">Données fictives uniquement</p>
