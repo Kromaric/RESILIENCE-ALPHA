@@ -1,16 +1,8 @@
-import { useState } from 'react'
-import { Loader2, AlertTriangle } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import Card from '../Card'
 import { config } from '../../data/assistant'
 
 export default function ConfigPanel() {
-  const [reindexing, setReindexing] = useState(false)
-
-  function reindex() {
-    setReindexing(true)
-    setTimeout(() => setReindexing(false), 1500) // simulation
-  }
-
   return (
     <>
       <Card>
@@ -23,21 +15,18 @@ export default function ConfigPanel() {
             </div>
           ))}
         </dl>
-        <button
-          onClick={reindex}
-          disabled={reindexing}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-line py-2 text-xs text-gray-200 hover:bg-bg disabled:opacity-60"
-        >
-          {reindexing && <Loader2 size={12} className="animate-spin" />}
-          {reindexing ? 'Réindexation…' : 'Réindexer la documentation'}
-        </button>
+        {/* Pas de route de réindexation : l'index est reconstruit au démarrage si docs/ a changé */}
+        <p className="mt-4 border-t border-line pt-3 text-[11px] text-muted">
+          Index reconstruit au démarrage de l'assistant si la documentation a changé : modifier docs/, puis
+          redémarrer le conteneur assistant-rag.
+        </p>
       </Card>
 
       <div className="flex gap-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs text-gray-200">
         <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warn" />
         <p>
-          Accès séparé du moteur de remédiation : aucun droit sur Docker, Ansible ni Vault. Questions
-          et réponses journalisées dans Loki.
+          Lecture seule : aucun accès au moteur de remédiation, au socket Docker, à Vault ni à MariaDB. Les
+          journaux gardent la taille de la question et les sources citées, jamais son texte.
         </p>
       </div>
     </>
