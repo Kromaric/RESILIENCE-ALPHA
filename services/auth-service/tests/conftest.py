@@ -18,7 +18,15 @@ from sqlalchemy.pool import StaticPool
 from app.config import Settings
 from app.face.engine import fake_frame
 from app.main import create_app
-from app.models import Base, Client, ClientApi, ClientFaceTemplate, Session
+from app.models import (
+    Base,
+    Client,
+    ClientApi,
+    ClientFaceTemplate,
+    Operator,
+    OperatorSession,
+    Session,
+)
 from app.ratelimit import SlidingWindowLimiter
 
 PASSWORD = "demo-password"
@@ -67,7 +75,14 @@ async def _create_schema(engine):
 
 async def _reset(engine):
     async with engine.begin() as conn:
-        for model in (Session, ClientFaceTemplate, ClientApi, Client):
+        for model in (
+            OperatorSession,
+            Operator,
+            Session,
+            ClientFaceTemplate,
+            ClientApi,
+            Client,
+        ):
             await conn.execute(delete(model))
         await conn.execute(
             ClientApi.__table__.insert().values(
@@ -146,6 +161,23 @@ def add_client(app, db):
                 phone=phone,
                 display_name=fields.pop("display_name", "Camille Test"),
                 password_hash=app.state.passwords.hash(password),
+                **fields,
+            )
+        )
+
+    return _add
+
+
+@pytest.fixture
+def add_operator(app, db):
+    def _add(email="ops@orbe.test", password=PASSWORD, role="operator", **fields):
+        return db.add(
+            Operator(
+                id=str(uuid.uuid4()),
+                email=email,
+                display_name=fields.pop("display_name", "Opérateur SOC"),
+                password_hash=app.state.passwords.hash(password),
+                role=role,
                 **fields,
             )
         )

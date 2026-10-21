@@ -121,6 +121,31 @@ services:
     restart: unless-stopped
 
 
+  oorbe-bo-api:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-bo
+    container_name: oorbe-bo-api
+    environment:
+      BO_AUTH_URL: http://oorbe-auth-service:8001
+      BO_PROMETHEUS_URL: http://prometheus:9090
+      BO_LOKI_URL: http://loki:3100
+      BO_JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public_key
+      BO_DB_HOST: mariadb
+      BO_DB_PASSWORD_FILE: /run/secrets/bo_db_password
+    secrets: [jwt_public_key, bo_db_password]
+    depends_on:
+      - oorbe-auth-service
+      - mariadb
+    expose:
+      - "8006"   # relayé par le Nginx du dashboard sous /bo, jamais publié
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    restart: unless-stopped
+
   #oorbe-dashboard:
     #build:
      # context: ..
@@ -150,6 +175,7 @@ services:
       MARIADB_PAYMENT_SVC_PASSWORD_FILE: /run/secrets/payment_db_password
       MARIADB_REMEDIATION_RO_PASSWORD_FILE: /run/secrets/remediation_db_password
       MARIADB_EXPORTER_PASSWORD_FILE: /run/secrets/exporter_db_password
+      MARIADB_BO_RO_PASSWORD_FILE: /run/secrets/bo_db_password
       ORBE_PROBE_API_KEY_FILE: /run/secrets/probe_api_key
     secrets:
       - db_root_password
@@ -157,6 +183,7 @@ services:
       - payment_db_password
       - remediation_db_password
       - exporter_db_password
+      - bo_db_password
       - probe_api_key
     ports:
       - "3306:3306"
@@ -198,6 +225,7 @@ secrets:
   payment_db_password:     { file: ../secrets/payment_db_password }
   remediation_db_password: { file: ../secrets/remediation_db_password }
   exporter_db_password:    { file: ../secrets/exporter_db_password }
+  bo_db_password:          { file: ../secrets/bo_db_password }
   probe_api_key:           { file: ../secrets/probe_api_key }
   jwt_private_key:         { file: ../secrets/jwt_private_key.pem }
   jwt_public_key:          { file: ../secrets/jwt_public_key.pem }

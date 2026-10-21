@@ -21,6 +21,7 @@ PASSWORDS = [
     "payment_db_password",
     "remediation_db_password",
     "exporter_db_password",
+    "bo_db_password",
 ]
 
 

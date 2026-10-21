@@ -314,7 +314,9 @@ Détail en §7.
 ### 4.7 dashboard
 
 - React/Tailwind, servi par Nginx sur `127.0.0.1:8080`.
-- Son Nginx ne relaie **que** `GET /incidents*` et `GET /status` vers le moteur (aucune route d'écriture).
+- **Back : `bo-api` (8006, FastAPI, lecture seule)**, seul service appelé par le dashboard ; son Nginx relaie `/bo/` vers bo-api, rien d'autre. bo-api lit Prometheus, Loki, Grafana, le moteur de remédiation (`GET /incidents*`, `GET /status`), le détecteur et l'assistant ; lecture de la base avec le compte `bo_ro` (lecture seule ; clients via la vue `bo_clients`, email et téléphone masqués par MariaDB) ; aucun accès au socket Docker, aucune route d'écriture.
+- **Données applicatives** (`/bo/data`) : indicateurs, séries et contrôle comptable (rôle `viewer`) ; listes et fiches des opérations, clients et demandes (rôle `operator`, chaque consultation journalisée pour le SOC). Comptes de la sonde exclus.
+- **Connexion des opérateurs** : comptes distincts des clients (`operators`), mot de passe seul (pas de reconnaissance faciale pour le back-office), relayée par bo-api vers auth-service (`/operators/*`). JWT d'audience `orbe-bo` (1 h), rôles `viewer` et `operator`. Comptes créés par un administrateur (`scripts/create_operator.py`), jamais par l'API.
 - Rafraîchissement 2 s (ou SSE). Panneaux Grafana intégrés (`allow_embedding`, viewer anonyme en lecture seule sur une organisation dédiée).
 - Vues : état des services (vert / dégradé / rétabli), frise de l'incident (détecté → contenu → rétabli → vérifié), score d'anomalie, transactions de la sonde.
 

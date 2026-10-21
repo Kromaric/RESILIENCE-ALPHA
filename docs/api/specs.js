@@ -541,6 +541,143 @@ window.ORBE_SPECS = {
       }
      ]
     }
+   },
+   "/operators/login": {
+    "post": {
+     "tags": [
+      "Back-office"
+     ],
+     "summary": "Connexion d'un opérateur",
+     "description": "Mêmes protections que la connexion client : 5 échecs → compte bloqué 10 min,\n20 tentatives par minute et par IP. Pas de reconnaissance faciale.",
+     "operationId": "login_operators_login_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LoginRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/OperatorTokenResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Identifiants invalides ou compte désactivé",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "423": {
+       "description": "Compte bloqué (en-tête Retry-After)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "429": {
+       "description": "Trop de tentatives depuis cette IP",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/operators/logout": {
+    "post": {
+     "tags": [
+      "Back-office"
+     ],
+     "summary": "Déconnexion d'un opérateur (révoque la session)",
+     "operationId": "logout_operators_logout_post",
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/operators/me": {
+    "get": {
+     "tags": [
+      "Back-office"
+     ],
+     "summary": "Opérateur connecté (sert aussi à bo-api pour vérifier la session)",
+     "operationId": "me_operators_me_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/OperatorMe"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
    }
   },
   "components": {
@@ -830,6 +967,81 @@ window.ORBE_SPECS = {
      ],
      "title": "MeResponse"
     },
+    "OperatorMe": {
+     "properties": {
+      "operator_id": {
+       "type": "string",
+       "title": "Operator Id"
+      },
+      "email": {
+       "type": "string",
+       "title": "Email"
+      },
+      "display_name": {
+       "type": "string",
+       "title": "Display Name"
+      },
+      "role": {
+       "type": "string",
+       "enum": [
+        "viewer",
+        "operator"
+       ],
+       "title": "Role"
+      },
+      "session_id": {
+       "type": "string",
+       "title": "Session Id"
+      },
+      "expires_at": {
+       "type": "string",
+       "title": "Expires At"
+      }
+     },
+     "type": "object",
+     "required": [
+      "operator_id",
+      "email",
+      "display_name",
+      "role",
+      "session_id",
+      "expires_at"
+     ],
+     "title": "OperatorMe"
+    },
+    "OperatorTokenResponse": {
+     "properties": {
+      "access_token": {
+       "type": "string",
+       "title": "Access Token"
+      },
+      "token_type": {
+       "type": "string",
+       "const": "bearer",
+       "title": "Token Type",
+       "default": "bearer"
+      },
+      "expires_in": {
+       "type": "integer",
+       "title": "Expires In"
+      },
+      "role": {
+       "type": "string",
+       "enum": [
+        "viewer",
+        "operator"
+       ],
+       "title": "Role"
+      }
+     },
+     "type": "object",
+     "required": [
+      "access_token",
+      "expires_in",
+      "role"
+     ],
+     "title": "OperatorTokenResponse"
+    },
     "RegisterRequest": {
      "properties": {
       "email": {
@@ -1017,6 +1229,10 @@ window.ORBE_SPECS = {
    {
     "name": "Partenaires",
     "description": "Clés d'API des partenaires"
+   },
+   {
+    "name": "Back-office",
+    "description": "Connexion des opérateurs du dashboard (mot de passe seul)"
    }
   ],
   "servers": [
@@ -1026,6 +1242,2217 @@ window.ORBE_SPECS = {
    },
    {
     "url": "http://localhost:8001",
+    "description": "Service lancé en local"
+   }
+  ]
+ },
+ "bo-api": {
+  "openapi": "3.1.0",
+  "info": {
+   "title": "Orbe — bo-api",
+   "description": "API du back-office : alimente le dashboard de supervision (état des services, indicateurs, incidents, journaux, Grafana, assistant). **Lecture seule** : aucune route ne modifie la plateforme.\n\n- Connexion : `POST /bo/auth/login` (opérateur, mot de passe seul), puis `Authorization: Bearer <jeton>` sur toutes les autres routes.\n- Rôles : `viewer` (indicateurs agrégés) et `operator` (en plus : listes et fiches clients, opérations, demandes ; chaque consultation est journalisée).\n- Erreurs : `{\"detail\": {\"code\", \"message\"}}` ; un service interrogé indisponible renvoie `503 <service>_unavailable`.\n\nVoir CADRAGE §4.7.",
+   "version": "0.1.0"
+  },
+  "paths": {
+   "/bo/auth/login": {
+    "post": {
+     "tags": [
+      "Connexion"
+     ],
+     "summary": "Se connecter (opérateur)",
+     "description": "Mot de passe seul. Jeton valable 1 h, à envoyer ensuite en `Authorization: Bearer`.\nAprès 5 échecs, le compte est bloqué 10 minutes.",
+     "operationId": "login_bo_auth_login_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LoginRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/TokenResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Identifiants invalides",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "423": {
+       "description": "Compte bloqué (en-tête Retry-After)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "429": {
+       "description": "Trop de tentatives (en-tête Retry-After)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "auth-service injoignable",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/auth/logout": {
+    "post": {
+     "tags": [
+      "Connexion"
+     ],
+     "summary": "Se déconnecter (révoque la session)",
+     "operationId": "logout_bo_auth_logout_post",
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/bo/auth/me": {
+    "get": {
+     "tags": [
+      "Connexion"
+     ],
+     "summary": "Opérateur connecté",
+     "operationId": "me_bo_auth_me_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/MeResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/bo/data/summary": {
+    "get": {
+     "tags": [
+      "Données applicatives"
+     ],
+     "summary": "Indicateurs de l'application",
+     "description": "Clients, opérations des dernières 24 h et 7 jours, demandes d'argent, soldes.\nHors comptes de la sonde.",
+     "operationId": "summary_bo_data_summary_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Summary"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Base de données indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/bo/data/series": {
+    "get": {
+     "tags": [
+      "Données applicatives"
+     ],
+     "summary": "Évolution dans le temps",
+     "description": "`hour` : 24 dernières heures ; `day` : 30 derniers jours. `amount` = montants des\npaiements autorisés (centimes) ; `declines` = paiements refusés ; `transactions` = toutes\nles opérations ; `registrations` = inscriptions. Hors comptes de la sonde.",
+     "operationId": "series_bo_data_series_get",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "metric",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "enum": [
+         "transactions",
+         "amount",
+         "declines",
+         "registrations"
+        ],
+        "type": "string",
+        "default": "transactions",
+        "title": "Metric"
+       }
+      },
+      {
+       "name": "interval",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "enum": [
+         "hour",
+         "day"
+        ],
+        "type": "string",
+        "default": "hour",
+        "title": "Interval"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Series"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Base de données indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/data/ledger/check": {
+    "get": {
+     "tags": [
+      "Données applicatives"
+     ],
+     "summary": "Contrôle de cohérence comptable",
+     "description": "Partie double : chaque opération a autant de débits que de crédits, chaque solde est\nla somme de ses écritures, aucun client n'est à découvert, une opération autorisée a\nexactement 2 écritures et une opération refusée aucune. Porte sur toute la base.",
+     "operationId": "ledger_check_bo_data_ledger_check_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/LedgerCheck"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Base de données indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/bo/data/transactions": {
+    "get": {
+     "tags": [
+      "Données applicatives"
+     ],
+     "summary": "Opérations",
+     "description": "Plus récentes d'abord. Hors comptes de la sonde.",
+     "operationId": "list_transactions_bo_data_transactions_get",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "type",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "enum": [
+           "payment",
+           "refund",
+           "payout"
+          ],
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Type"
+       }
+      },
+      {
+       "name": "status",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 16
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Status"
+       }
+      },
+      {
+       "name": "client_id",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 36
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "description": "payeur ou bénéficiaire",
+        "title": "Client Id"
+       },
+       "description": "payeur ou bénéficiaire"
+      },
+      {
+       "name": "reference",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 11
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Reference"
+       }
+      },
+      {
+       "name": "date_from",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string",
+          "format": "date-time"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "description": "UTC, inclus",
+        "title": "Date From"
+       },
+       "description": "UTC, inclus"
+      },
+      {
+       "name": "date_to",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string",
+          "format": "date-time"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "description": "UTC, exclu",
+        "title": "Date To"
+       },
+       "description": "UTC, exclu"
+      },
+      {
+       "name": "page",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "title": "Page"
+       }
+      },
+      {
+       "name": "size",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 25,
+        "title": "Size"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/TransactionPage"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « operator »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Base de données indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/data/transactions/{reference}": {
+    "get": {
+     "tags": [
+      "Données applicatives"
+     ],
+     "summary": "Détail d'une opération",
+     "description": "Avec ses écritures comptables, le paiement d'origine ou le remboursement, la demande\nd'argent réglée et le compte lié d'un retrait.",
+     "operationId": "transaction_detail_bo_data_transactions__reference__get",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "reference",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Reference"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/TransactionDetail"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « operator »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Base de données indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opération inconnue",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/data/clients": {
+    "get": {
+     "tags": [
+      "Données applicatives"
+     ],
+     "summary": "Clients",
+     "description": "Email et téléphone toujours masqués. Recherche par nom seulement (pas par email ni\ntéléphone : on ne pourrait pas s'en servir pour retrouver une valeur masquée). Plus récents\nd'abord, hors comptes de la sonde.",
+     "operationId": "list_clients_bo_data_clients_get",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "q",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 80
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "description": "nom affiché (contient)",
+        "title": "Q"
+       },
+       "description": "nom affiché (contient)"
+      },
+      {
+       "name": "locked",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "boolean"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Locked"
+       }
+      },
+      {
+       "name": "face_enrolled",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "boolean"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Face Enrolled"
+       }
+      },
+      {
+       "name": "page",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "title": "Page"
+       }
+      },
+      {
+       "name": "size",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 25,
+        "title": "Size"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ClientPage"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « operator »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Base de données indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/data/clients/{client_id}": {
+    "get": {
+     "tags": [
+      "Données applicatives"
+     ],
+     "summary": "Fiche client",
+     "description": "Comptes liés (4 derniers caractères de l'IBAN), sessions actives, demandes en attente\net 20 dernières opérations.",
+     "operationId": "client_detail_bo_data_clients__client_id__get",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "client_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Client Id"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ClientDetail"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « operator »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Base de données indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Client inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/data/requests": {
+    "get": {
+     "tags": [
+      "Données applicatives"
+     ],
+     "summary": "Demandes d'argent",
+     "description": "Plus récentes d'abord, hors comptes de la sonde.",
+     "operationId": "list_requests_bo_data_requests_get",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "status",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "enum": [
+           "pending",
+           "paid",
+           "declined",
+           "cancelled",
+           "expired",
+           "failed"
+          ],
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Status"
+       }
+      },
+      {
+       "name": "client_id",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 36
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "description": "demandeur ou payeur",
+        "title": "Client Id"
+       },
+       "description": "demandeur ou payeur"
+      },
+      {
+       "name": "page",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "title": "Page"
+       }
+      },
+      {
+       "name": "size",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 25,
+        "title": "Size"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/RequestPage"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « operator »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Base de données indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "components": {
+   "schemas": {
+    "AccountMismatch": {
+     "properties": {
+      "account_id": {
+       "type": "string",
+       "title": "Account Id"
+      },
+      "label": {
+       "type": "string",
+       "title": "Label"
+      },
+      "balance_cents": {
+       "type": "integer",
+       "title": "Balance Cents"
+      },
+      "computed_cents": {
+       "type": "integer",
+       "title": "Computed Cents"
+      }
+     },
+     "type": "object",
+     "required": [
+      "account_id",
+      "label",
+      "balance_cents",
+      "computed_cents"
+     ],
+     "title": "AccountMismatch"
+    },
+    "BalancesSummary": {
+     "properties": {
+      "clients_total_cents": {
+       "type": "integer",
+       "title": "Clients Total Cents"
+      },
+      "counterparts_cents": {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "type": "object",
+       "title": "Counterparts Cents"
+      }
+     },
+     "type": "object",
+     "required": [
+      "clients_total_cents",
+      "counterparts_cents"
+     ],
+     "title": "BalancesSummary"
+    },
+    "Card": {
+     "properties": {
+      "brand": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Brand"
+      },
+      "last4": {
+       "type": "string",
+       "title": "Last4"
+      }
+     },
+     "type": "object",
+     "required": [
+      "brand",
+      "last4"
+     ],
+     "title": "Card"
+    },
+    "ClientDetail": {
+     "properties": {
+      "client_id": {
+       "type": "string",
+       "title": "Client Id"
+      },
+      "display_name": {
+       "type": "string",
+       "title": "Display Name"
+      },
+      "email_masked": {
+       "type": "string",
+       "title": "Email Masked"
+      },
+      "phone_masked": {
+       "type": "string",
+       "title": "Phone Masked"
+      },
+      "created_at": {
+       "type": "string",
+       "title": "Created At"
+      },
+      "face_enrolled": {
+       "type": "boolean",
+       "title": "Face Enrolled"
+      },
+      "locked": {
+       "type": "boolean",
+       "title": "Locked"
+      },
+      "balance_cents": {
+       "type": "integer",
+       "title": "Balance Cents"
+      },
+      "operations_count": {
+       "type": "integer",
+       "title": "Operations Count"
+      },
+      "failed_logins": {
+       "type": "integer",
+       "title": "Failed Logins"
+      },
+      "active_sessions": {
+       "type": "integer",
+       "title": "Active Sessions"
+      },
+      "pending_requests": {
+       "type": "integer",
+       "title": "Pending Requests"
+      },
+      "payout_accounts": {
+       "items": {
+        "$ref": "#/components/schemas/PayoutAccount"
+       },
+       "type": "array",
+       "title": "Payout Accounts"
+      },
+      "recent_transactions": {
+       "items": {
+        "$ref": "#/components/schemas/TransactionItem"
+       },
+       "type": "array",
+       "title": "Recent Transactions"
+      }
+     },
+     "type": "object",
+     "required": [
+      "client_id",
+      "display_name",
+      "email_masked",
+      "phone_masked",
+      "created_at",
+      "face_enrolled",
+      "locked",
+      "balance_cents",
+      "operations_count",
+      "failed_logins",
+      "active_sessions",
+      "pending_requests",
+      "payout_accounts",
+      "recent_transactions"
+     ],
+     "title": "ClientDetail"
+    },
+    "ClientItem": {
+     "properties": {
+      "client_id": {
+       "type": "string",
+       "title": "Client Id"
+      },
+      "display_name": {
+       "type": "string",
+       "title": "Display Name"
+      },
+      "email_masked": {
+       "type": "string",
+       "title": "Email Masked"
+      },
+      "phone_masked": {
+       "type": "string",
+       "title": "Phone Masked"
+      },
+      "created_at": {
+       "type": "string",
+       "title": "Created At"
+      },
+      "face_enrolled": {
+       "type": "boolean",
+       "title": "Face Enrolled"
+      },
+      "locked": {
+       "type": "boolean",
+       "title": "Locked"
+      },
+      "balance_cents": {
+       "type": "integer",
+       "title": "Balance Cents"
+      },
+      "operations_count": {
+       "type": "integer",
+       "title": "Operations Count"
+      }
+     },
+     "type": "object",
+     "required": [
+      "client_id",
+      "display_name",
+      "email_masked",
+      "phone_masked",
+      "created_at",
+      "face_enrolled",
+      "locked",
+      "balance_cents",
+      "operations_count"
+     ],
+     "title": "ClientItem"
+    },
+    "ClientPage": {
+     "properties": {
+      "items": {
+       "items": {
+        "$ref": "#/components/schemas/ClientItem"
+       },
+       "type": "array",
+       "title": "Items"
+      },
+      "page": {
+       "type": "integer",
+       "title": "Page"
+      },
+      "size": {
+       "type": "integer",
+       "title": "Size"
+      },
+      "total": {
+       "type": "integer",
+       "title": "Total"
+      }
+     },
+     "type": "object",
+     "required": [
+      "items",
+      "page",
+      "size",
+      "total"
+     ],
+     "title": "ClientPage"
+    },
+    "ClientsSummary": {
+     "properties": {
+      "total": {
+       "type": "integer",
+       "title": "Total"
+      },
+      "new_7d": {
+       "type": "integer",
+       "title": "New 7D"
+      },
+      "face_enrolled": {
+       "type": "integer",
+       "title": "Face Enrolled"
+      },
+      "locked": {
+       "type": "integer",
+       "title": "Locked"
+      }
+     },
+     "type": "object",
+     "required": [
+      "total",
+      "new_7d",
+      "face_enrolled",
+      "locked"
+     ],
+     "title": "ClientsSummary"
+    },
+    "Count": {
+     "properties": {
+      "key": {
+       "type": "string",
+       "title": "Key"
+      },
+      "count": {
+       "type": "integer",
+       "title": "Count"
+      }
+     },
+     "type": "object",
+     "required": [
+      "key",
+      "count"
+     ],
+     "title": "Count"
+    },
+    "EntriesAnomaly": {
+     "properties": {
+      "reference": {
+       "type": "string",
+       "title": "Reference"
+      },
+      "status": {
+       "type": "string",
+       "title": "Status"
+      },
+      "entries": {
+       "type": "integer",
+       "title": "Entries"
+      }
+     },
+     "type": "object",
+     "required": [
+      "reference",
+      "status",
+      "entries"
+     ],
+     "title": "EntriesAnomaly"
+    },
+    "ErrorDetail": {
+     "properties": {
+      "code": {
+       "type": "string",
+       "title": "Code",
+       "examples": [
+        "invalid_token"
+       ]
+      },
+      "message": {
+       "type": "string",
+       "title": "Message",
+       "examples": [
+        "Session invalide ou expirée."
+       ]
+      }
+     },
+     "type": "object",
+     "required": [
+      "code",
+      "message"
+     ],
+     "title": "ErrorDetail"
+    },
+    "ErrorOut": {
+     "properties": {
+      "detail": {
+       "$ref": "#/components/schemas/ErrorDetail"
+      }
+     },
+     "type": "object",
+     "required": [
+      "detail"
+     ],
+     "title": "ErrorOut"
+    },
+    "HTTPValidationError": {
+     "properties": {
+      "detail": {
+       "items": {
+        "$ref": "#/components/schemas/ValidationError"
+       },
+       "type": "array",
+       "title": "Detail"
+      }
+     },
+     "type": "object",
+     "title": "HTTPValidationError"
+    },
+    "LedgerCheck": {
+     "properties": {
+      "ok": {
+       "type": "boolean",
+       "title": "Ok"
+      },
+      "checked_at": {
+       "type": "string",
+       "title": "Checked At"
+      },
+      "transactions_checked": {
+       "type": "integer",
+       "title": "Transactions Checked"
+      },
+      "accounts_checked": {
+       "type": "integer",
+       "title": "Accounts Checked"
+      },
+      "unbalanced_transactions": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "title": "Unbalanced Transactions"
+      },
+      "account_mismatches": {
+       "items": {
+        "$ref": "#/components/schemas/AccountMismatch"
+       },
+       "type": "array",
+       "title": "Account Mismatches"
+      },
+      "negative_client_balances": {
+       "type": "integer",
+       "title": "Negative Client Balances"
+      },
+      "entries_anomalies": {
+       "items": {
+        "$ref": "#/components/schemas/EntriesAnomaly"
+       },
+       "type": "array",
+       "title": "Entries Anomalies"
+      }
+     },
+     "type": "object",
+     "required": [
+      "ok",
+      "checked_at",
+      "transactions_checked",
+      "accounts_checked",
+      "unbalanced_transactions",
+      "account_mismatches",
+      "negative_client_balances",
+      "entries_anomalies"
+     ],
+     "title": "LedgerCheck"
+    },
+    "LedgerLine": {
+     "properties": {
+      "direction": {
+       "type": "string",
+       "enum": [
+        "debit",
+        "credit"
+       ],
+       "title": "Direction"
+      },
+      "amount_cents": {
+       "type": "integer",
+       "title": "Amount Cents"
+      },
+      "account_type": {
+       "type": "string",
+       "enum": [
+        "client",
+        "counterpart"
+       ],
+       "title": "Account Type"
+      },
+      "account_label": {
+       "type": "string",
+       "title": "Account Label"
+      }
+     },
+     "type": "object",
+     "required": [
+      "direction",
+      "amount_cents",
+      "account_type",
+      "account_label"
+     ],
+     "title": "LedgerLine"
+    },
+    "LoginRequest": {
+     "properties": {
+      "email": {
+       "type": "string",
+       "maxLength": 254,
+       "minLength": 3,
+       "title": "Email"
+      },
+      "password": {
+       "type": "string",
+       "maxLength": 128,
+       "minLength": 1,
+       "title": "Password"
+      }
+     },
+     "type": "object",
+     "required": [
+      "email",
+      "password"
+     ],
+     "title": "LoginRequest",
+     "examples": [
+      {
+       "email": "ops@orbe.test",
+       "password": "demo-password"
+      }
+     ]
+    },
+    "MeResponse": {
+     "properties": {
+      "operator_id": {
+       "type": "string",
+       "title": "Operator Id"
+      },
+      "email": {
+       "type": "string",
+       "title": "Email"
+      },
+      "display_name": {
+       "type": "string",
+       "title": "Display Name"
+      },
+      "role": {
+       "type": "string",
+       "enum": [
+        "viewer",
+        "operator"
+       ],
+       "title": "Role"
+      }
+     },
+     "type": "object",
+     "required": [
+      "operator_id",
+      "email",
+      "display_name",
+      "role"
+     ],
+     "title": "MeResponse"
+    },
+    "OperationsWindow": {
+     "properties": {
+      "count": {
+       "type": "integer",
+       "title": "Count"
+      },
+      "by_type": {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "type": "object",
+       "title": "By Type"
+      },
+      "by_status": {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "type": "object",
+       "title": "By Status"
+      },
+      "payments_authorized_cents": {
+       "type": "integer",
+       "title": "Payments Authorized Cents"
+      },
+      "refunds_cents": {
+       "type": "integer",
+       "title": "Refunds Cents"
+      },
+      "payouts_cents": {
+       "type": "integer",
+       "title": "Payouts Cents"
+      },
+      "decline_rate": {
+       "type": "number",
+       "title": "Decline Rate"
+      },
+      "decline_reasons": {
+       "items": {
+        "$ref": "#/components/schemas/Count"
+       },
+       "type": "array",
+       "title": "Decline Reasons"
+      }
+     },
+     "type": "object",
+     "required": [
+      "count",
+      "by_type",
+      "by_status",
+      "payments_authorized_cents",
+      "refunds_cents",
+      "payouts_cents",
+      "decline_rate",
+      "decline_reasons"
+     ],
+     "title": "OperationsWindow"
+    },
+    "Party": {
+     "properties": {
+      "client_id": {
+       "type": "string",
+       "title": "Client Id"
+      },
+      "display_name": {
+       "type": "string",
+       "title": "Display Name"
+      }
+     },
+     "type": "object",
+     "required": [
+      "client_id",
+      "display_name"
+     ],
+     "title": "Party"
+    },
+    "PayoutAccount": {
+     "properties": {
+      "label": {
+       "type": "string",
+       "title": "Label"
+      },
+      "iban_last4": {
+       "type": "string",
+       "title": "Iban Last4"
+      },
+      "is_default": {
+       "type": "boolean",
+       "title": "Is Default"
+      }
+     },
+     "type": "object",
+     "required": [
+      "label",
+      "iban_last4",
+      "is_default"
+     ],
+     "title": "PayoutAccount"
+    },
+    "RequestItem": {
+     "properties": {
+      "reference": {
+       "type": "string",
+       "title": "Reference"
+      },
+      "amount_cents": {
+       "type": "integer",
+       "title": "Amount Cents"
+      },
+      "currency": {
+       "type": "string",
+       "title": "Currency"
+      },
+      "status": {
+       "type": "string",
+       "title": "Status"
+      },
+      "failure_reason": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Failure Reason"
+      },
+      "requester": {
+       "$ref": "#/components/schemas/Party"
+      },
+      "payer": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/Party"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "transaction_reference": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Transaction Reference"
+      },
+      "description": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Description"
+      },
+      "created_at": {
+       "type": "string",
+       "title": "Created At"
+      },
+      "expires_at": {
+       "type": "string",
+       "title": "Expires At"
+      }
+     },
+     "type": "object",
+     "required": [
+      "reference",
+      "amount_cents",
+      "currency",
+      "status",
+      "failure_reason",
+      "requester",
+      "payer",
+      "transaction_reference",
+      "description",
+      "created_at",
+      "expires_at"
+     ],
+     "title": "RequestItem"
+    },
+    "RequestPage": {
+     "properties": {
+      "items": {
+       "items": {
+        "$ref": "#/components/schemas/RequestItem"
+       },
+       "type": "array",
+       "title": "Items"
+      },
+      "page": {
+       "type": "integer",
+       "title": "Page"
+      },
+      "size": {
+       "type": "integer",
+       "title": "Size"
+      },
+      "total": {
+       "type": "integer",
+       "title": "Total"
+      }
+     },
+     "type": "object",
+     "required": [
+      "items",
+      "page",
+      "size",
+      "total"
+     ],
+     "title": "RequestPage"
+    },
+    "RequestsSummary": {
+     "properties": {
+      "pending": {
+       "type": "integer",
+       "title": "Pending"
+      },
+      "paid_7d": {
+       "type": "integer",
+       "title": "Paid 7D"
+      }
+     },
+     "type": "object",
+     "required": [
+      "pending",
+      "paid_7d"
+     ],
+     "title": "RequestsSummary"
+    },
+    "Series": {
+     "properties": {
+      "metric": {
+       "type": "string",
+       "enum": [
+        "transactions",
+        "amount",
+        "declines",
+        "registrations"
+       ],
+       "title": "Metric"
+      },
+      "interval": {
+       "type": "string",
+       "enum": [
+        "hour",
+        "day"
+       ],
+       "title": "Interval"
+      },
+      "points": {
+       "items": {
+        "$ref": "#/components/schemas/SeriesPoint"
+       },
+       "type": "array",
+       "title": "Points"
+      }
+     },
+     "type": "object",
+     "required": [
+      "metric",
+      "interval",
+      "points"
+     ],
+     "title": "Series"
+    },
+    "SeriesPoint": {
+     "properties": {
+      "time": {
+       "type": "string",
+       "title": "Time"
+      },
+      "value": {
+       "type": "integer",
+       "title": "Value"
+      }
+     },
+     "type": "object",
+     "required": [
+      "time",
+      "value"
+     ],
+     "title": "SeriesPoint"
+    },
+    "Summary": {
+     "properties": {
+      "generated_at": {
+       "type": "string",
+       "title": "Generated At"
+      },
+      "clients": {
+       "$ref": "#/components/schemas/ClientsSummary"
+      },
+      "operations_24h": {
+       "$ref": "#/components/schemas/OperationsWindow"
+      },
+      "operations_7d": {
+       "$ref": "#/components/schemas/OperationsWindow"
+      },
+      "requests": {
+       "$ref": "#/components/schemas/RequestsSummary"
+      },
+      "balances": {
+       "$ref": "#/components/schemas/BalancesSummary"
+      }
+     },
+     "type": "object",
+     "required": [
+      "generated_at",
+      "clients",
+      "operations_24h",
+      "operations_7d",
+      "requests",
+      "balances"
+     ],
+     "title": "Summary"
+    },
+    "TokenResponse": {
+     "properties": {
+      "access_token": {
+       "type": "string",
+       "title": "Access Token"
+      },
+      "token_type": {
+       "type": "string",
+       "const": "bearer",
+       "title": "Token Type",
+       "default": "bearer"
+      },
+      "expires_in": {
+       "type": "integer",
+       "title": "Expires In"
+      },
+      "role": {
+       "type": "string",
+       "enum": [
+        "viewer",
+        "operator"
+       ],
+       "title": "Role"
+      }
+     },
+     "type": "object",
+     "required": [
+      "access_token",
+      "expires_in",
+      "role"
+     ],
+     "title": "TokenResponse"
+    },
+    "TransactionDetail": {
+     "properties": {
+      "reference": {
+       "type": "string",
+       "title": "Reference"
+      },
+      "type": {
+       "type": "string",
+       "enum": [
+        "payment",
+        "refund",
+        "payout"
+       ],
+       "title": "Type"
+      },
+      "amount_cents": {
+       "type": "integer",
+       "title": "Amount Cents"
+      },
+      "currency": {
+       "type": "string",
+       "title": "Currency"
+      },
+      "status": {
+       "type": "string",
+       "title": "Status"
+      },
+      "decline_reason": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Decline Reason"
+      },
+      "card": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/Card"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "payer": {
+       "$ref": "#/components/schemas/Party"
+      },
+      "recipient": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/Party"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "description": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Description"
+      },
+      "created_at": {
+       "type": "string",
+       "title": "Created At"
+      },
+      "updated_at": {
+       "type": "string",
+       "title": "Updated At"
+      },
+      "parent_reference": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Parent Reference"
+      },
+      "refund_reference": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Refund Reference"
+      },
+      "request_reference": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Request Reference"
+      },
+      "payout_account": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/PayoutAccount"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "entries": {
+       "items": {
+        "$ref": "#/components/schemas/LedgerLine"
+       },
+       "type": "array",
+       "title": "Entries"
+      }
+     },
+     "type": "object",
+     "required": [
+      "reference",
+      "type",
+      "amount_cents",
+      "currency",
+      "status",
+      "decline_reason",
+      "card",
+      "payer",
+      "recipient",
+      "description",
+      "created_at",
+      "updated_at",
+      "parent_reference",
+      "refund_reference",
+      "request_reference",
+      "payout_account",
+      "entries"
+     ],
+     "title": "TransactionDetail"
+    },
+    "TransactionItem": {
+     "properties": {
+      "reference": {
+       "type": "string",
+       "title": "Reference"
+      },
+      "type": {
+       "type": "string",
+       "enum": [
+        "payment",
+        "refund",
+        "payout"
+       ],
+       "title": "Type"
+      },
+      "amount_cents": {
+       "type": "integer",
+       "title": "Amount Cents"
+      },
+      "currency": {
+       "type": "string",
+       "title": "Currency"
+      },
+      "status": {
+       "type": "string",
+       "title": "Status"
+      },
+      "decline_reason": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Decline Reason"
+      },
+      "card": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/Card"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "payer": {
+       "$ref": "#/components/schemas/Party"
+      },
+      "recipient": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/Party"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "description": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Description"
+      },
+      "created_at": {
+       "type": "string",
+       "title": "Created At"
+      }
+     },
+     "type": "object",
+     "required": [
+      "reference",
+      "type",
+      "amount_cents",
+      "currency",
+      "status",
+      "decline_reason",
+      "card",
+      "payer",
+      "recipient",
+      "description",
+      "created_at"
+     ],
+     "title": "TransactionItem"
+    },
+    "TransactionPage": {
+     "properties": {
+      "items": {
+       "items": {
+        "$ref": "#/components/schemas/TransactionItem"
+       },
+       "type": "array",
+       "title": "Items"
+      },
+      "page": {
+       "type": "integer",
+       "title": "Page"
+      },
+      "size": {
+       "type": "integer",
+       "title": "Size"
+      },
+      "total": {
+       "type": "integer",
+       "title": "Total"
+      }
+     },
+     "type": "object",
+     "required": [
+      "items",
+      "page",
+      "size",
+      "total"
+     ],
+     "title": "TransactionPage"
+    },
+    "ValidationError": {
+     "properties": {
+      "loc": {
+       "items": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "integer"
+         }
+        ]
+       },
+       "type": "array",
+       "title": "Location"
+      },
+      "msg": {
+       "type": "string",
+       "title": "Message"
+      },
+      "type": {
+       "type": "string",
+       "title": "Error Type"
+      },
+      "input": {
+       "title": "Input"
+      },
+      "ctx": {
+       "type": "object",
+       "title": "Context"
+      }
+     },
+     "type": "object",
+     "required": [
+      "loc",
+      "msg",
+      "type"
+     ],
+     "title": "ValidationError"
+    }
+   },
+   "securitySchemes": {
+    "HTTPBearer": {
+     "type": "http",
+     "scheme": "bearer"
+    }
+   }
+  },
+  "tags": [
+   {
+    "name": "Connexion",
+    "description": "Connexion des opérateurs"
+   },
+   {
+    "name": "Données applicatives",
+    "description": "Clients, opérations, demandes et comptabilité (lecture seule, email et téléphone masqués)"
+   }
+  ],
+  "servers": [
+   {
+    "url": "http://127.0.0.1:8080",
+    "description": "Démonstrateur, à travers le Nginx du dashboard"
+   },
+   {
+    "url": "http://localhost:8006",
     "description": "Service lancé en local"
    }
   ]

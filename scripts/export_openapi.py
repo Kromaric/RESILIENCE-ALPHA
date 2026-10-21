@@ -36,6 +36,13 @@ SERVICES = {
         "public": "/api/payments",
         "port": 8002,
     },
+    "bo-api": {
+        "prefix": "BO",
+        "key_setting": "JWT_PUBLIC_KEY_FILE",
+        # pas derrière le WAF : relayé par le Nginx du dashboard (127.0.0.1:8080), sous /bo
+        "server": ("http://127.0.0.1:8080", "Démonstrateur, à travers le Nginx du dashboard"),
+        "port": 8006,
+    },
 }
 
 
@@ -74,11 +81,10 @@ def build_spec(service: str) -> dict:
 
         spec = create_app().openapi()
 
+    waf = (f"https://192.168.137.1{config.get('public', '')}", "Démonstrateur, à travers le WAF")
+    url, description = config.get("server", waf)
     spec["servers"] = [
-        {
-            "url": f"https://192.168.137.1{config['public']}",
-            "description": "Démonstrateur, à travers le WAF",
-        },
+        {"url": url, "description": description},
         {"url": f"http://localhost:{config['port']}", "description": "Service lancé en local"},
     ]
     return spec

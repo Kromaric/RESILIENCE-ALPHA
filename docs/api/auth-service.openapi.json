@@ -539,6 +539,143 @@
           }
         ]
       }
+    },
+    "/operators/login": {
+      "post": {
+        "tags": [
+          "Back-office"
+        ],
+        "summary": "Connexion d'un opérateur",
+        "description": "Mêmes protections que la connexion client : 5 échecs → compte bloqué 10 min,\n20 tentatives par minute et par IP. Pas de reconnaissance faciale.",
+        "operationId": "login_operators_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorTokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identifiants invalides ou compte désactivé",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "Compte bloqué (en-tête Retry-After)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de tentatives depuis cette IP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/operators/logout": {
+      "post": {
+        "tags": [
+          "Back-office"
+        ],
+        "summary": "Déconnexion d'un opérateur (révoque la session)",
+        "operationId": "logout_operators_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Session invalide ou expirée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/operators/me": {
+      "get": {
+        "tags": [
+          "Back-office"
+        ],
+        "summary": "Opérateur connecté (sert aussi à bo-api pour vérifier la session)",
+        "operationId": "me_operators_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorMe"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -828,6 +965,81 @@
         ],
         "title": "MeResponse"
       },
+      "OperatorMe": {
+        "properties": {
+          "operator_id": {
+            "type": "string",
+            "title": "Operator Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "viewer",
+              "operator"
+            ],
+            "title": "Role"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operator_id",
+          "email",
+          "display_name",
+          "role",
+          "session_id",
+          "expires_at"
+        ],
+        "title": "OperatorMe"
+      },
+      "OperatorTokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "const": "bearer",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "viewer",
+              "operator"
+            ],
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in",
+          "role"
+        ],
+        "title": "OperatorTokenResponse"
+      },
       "RegisterRequest": {
         "properties": {
           "email": {
@@ -1015,6 +1227,10 @@
     {
       "name": "Partenaires",
       "description": "Clés d'API des partenaires"
+    },
+    {
+      "name": "Back-office",
+      "description": "Connexion des opérateurs du dashboard (mot de passe seul)"
     }
   ],
   "servers": [

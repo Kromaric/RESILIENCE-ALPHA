@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     jwt_issuer: str = "orbe-auth"
     jwt_audience: str = "orbe"
     jwt_ttl_seconds: int = 900
+    # Back-office : audience distincte (un jeton client n'ouvre pas le dashboard, un jeton
+    # opérateur ne paie pas)
+    bo_jwt_audience: str = "orbe-bo"
+    bo_jwt_ttl_seconds: int = 3600
 
     # Second facteur : reconnaissance faciale (notre modèle), CADRAGE §4.2
     face_engine: str = "insightface"  # insightface | fake (tests et développement sans caméra)

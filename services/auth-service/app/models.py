@@ -99,3 +99,35 @@ class Session(Base):
     @property
     def factor_list(self) -> list[str]:
         return self.factors.split(",") if self.factors else []
+
+
+class Operator(Base):
+    """Opérateur du back-office (dashboard). Créé par un administrateur, jamais par l'API."""
+
+    __tablename__ = "operators"
+
+    id: Mapped[str] = mapped_column(CHAR(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)
+    display_name: Mapped[str] = mapped_column(String(80))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(16), default="viewer")  # viewer | operator
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class OperatorSession(Base):
+    """Session du back-office ; son identifiant est le `jti` du JWT d'audience orbe-bo."""
+
+    __tablename__ = "operator_sessions"
+
+    id: Mapped[str] = mapped_column(CHAR(36), primary_key=True)
+    operator_id: Mapped[str] = mapped_column(ForeignKey("operators.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(String(16))  # active | revoked | expired
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)

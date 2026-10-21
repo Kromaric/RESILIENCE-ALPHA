@@ -1,4 +1,5 @@
-# Orbe — environnement de développement local : MariaDB + auth-service + payment-service.
+# Orbe — environnement de développement local : MariaDB + auth-service + payment-service
+# + bo-api.
 # Ce n'est PAS la pile de démonstration (pas de WAF, d'observabilité ni de remédiation) :
 # celle-ci est infra/docker-compose.yml, construite par l'équipe infra. Les deux utilisent
 # les mêmes Dockerfiles (dockerfiles/).
@@ -8,6 +9,7 @@
 #   docker compose -f docker-compose.dev.yml up -d --build
 #
 # Swagger : http://localhost:8001/docs (auth) · http://localhost:8002/docs (paiement)
+#           http://localhost:8006/docs (back-office du dashboard)
 
 name: orbe-dev
 
@@ -28,6 +30,7 @@ services:
       MARIADB_PAYMENT_SVC_PASSWORD_FILE: /run/secrets/payment_db_password
       MARIADB_REMEDIATION_RO_PASSWORD_FILE: /run/secrets/remediation_db_password
       MARIADB_EXPORTER_PASSWORD_FILE: /run/secrets/exporter_db_password
+      MARIADB_BO_RO_PASSWORD_FILE: /run/secrets/bo_db_password
       ORBE_PROBE_API_KEY_FILE: /run/secrets/probe_api_key
     secrets:
       - db_root_password
@@ -35,6 +38,7 @@ services:
       - payment_db_password
       - remediation_db_password
       - exporter_db_password
+      - bo_db_password
       - probe_api_key
     volumes:
       # données de démo : environnement de développement uniquement
@@ -85,12 +89,33 @@ services:
       - "127.0.0.1:8002:8002"
     mem_limit: 256m
 
+  bo-api:
+    build: { context: ., dockerfile: dockerfiles/Dockerfile-bo }
+    <<: *hardening
+    environment:
+      BO_AUTH_URL: http://auth-service:8001
+      BO_JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public_key
+      BO_DB_HOST: mariadb
+      BO_DB_PASSWORD_FILE: /run/secrets/bo_db_password
+      # Prometheus, Loki et Grafana ne tournent pas dans cette pile : les routes de
+      # supervision répondront « indisponible » (pile complète : infra/docker-compose.yml)
+      BO_CORS_ORIGINS: '["http://localhost:5173"]'   # dashboard lancé avec « npm run dev »
+      BO_ENABLE_DOCS: "true"
+      BO_LOG_LEVEL: INFO
+    secrets: [jwt_public_key, bo_db_password]
+    depends_on:
+      auth-service: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:8006:8006"
+    mem_limit: 128m
+
 secrets:
   db_root_password:        { file: ./secrets/db_root_password }
   auth_db_password:        { file: ./secrets/auth_db_password }
   payment_db_password:     { file: ./secrets/payment_db_password }
   remediation_db_password: { file: ./secrets/remediation_db_password }
   exporter_db_password:    { file: ./secrets/exporter_db_password }
+  bo_db_password:          { file: ./secrets/bo_db_password }
   probe_api_key:           { file: ./secrets/probe_api_key }
   jwt_private_key:         { file: ./secrets/jwt_private_key.pem }
   jwt_public_key:          { file: ./secrets/jwt_public_key.pem }

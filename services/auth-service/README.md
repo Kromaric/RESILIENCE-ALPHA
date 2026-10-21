@@ -25,6 +25,7 @@ aucune image : seulement 3 à 5 gabarits par client, chiffrés en AES-256-GCM (`
 | `GET /face` · `DELETE /face` | État de l'enrôlement · droit à l'effacement |
 | `GET /me` | Profil, facteurs de la session, visage enregistré ou non |
 | `GET /verify` | Validation d'une clé d'API partenaire (`X-API-Key`) |
+| `POST /operators/login` · `POST /operators/logout` · `GET /operators/me` | Opérateurs du back-office (mot de passe seul, JWT d'audience `orbe-bo`), relayés par bo-api |
 | `GET /health/live` · `GET /health/ready` | Santé du processus · base joignable |
 | `GET /metrics` | Métriques Prometheus |
 
@@ -39,6 +40,15 @@ Erreurs : `{"detail": {"code": "...", "message": "..."}}` — `invalid_credentia
 `liveness_failed`, `consent_required`, `enrollment_failed`, `face_confirmation_required`,
 `invalid_frame`, `too_many_frames`, `frame_too_large`, `face_unavailable`, `invalid_token`,
 `invalid_api_key`.
+
+## Opérateurs du back-office
+
+Comptes distincts des clients (tables `operators`, `operator_sessions`), sans inscription : ils
+sont créés par `scripts/create_operator.py` (compte root de MariaDB ; `auth_svc` ne peut ni
+créer d'opérateur ni changer un rôle). Mot de passe seul, mêmes protections que les clients
+(blocage après 5 échecs, limitation par IP). JWT d'audience `orbe-bo` valable 1 h, avec `role`
+(`viewer` ou `operator`) : un jeton client n'ouvre pas le back-office, et un jeton opérateur
+n'est pas accepté par payment-service.
 
 ## Sécurité
 - Mots de passe argon2id ; hachages et vérifications limités à 4 en parallèle (mémoire bornée).
@@ -60,6 +70,7 @@ Erreurs : `{"detail": {"code": "...", "message": "..."}}` — `invalid_credentia
 | `AUTH_DB_PASSWORD_FILE` | `/run/secrets/auth_db_password` |
 | `AUTH_JWT_PRIVATE_KEY_FILE` | `/run/secrets/jwt_private_key` |
 | `AUTH_JWT_TTL_SECONDS` | `900` |
+| `AUTH_BO_JWT_AUDIENCE` / `AUTH_BO_JWT_TTL_SECONDS` | `orbe-bo` / `3600` |
 | `AUTH_FACE_ENGINE` | `insightface` (`fake` : moteur simulé, tests et développement sans caméra) |
 | `AUTH_FACE_MODEL` / `AUTH_FACE_THRESHOLD` | `buffalo_s` / `0.40` |
 | `AUTH_LIVENESS_MIN_TURN_DEGREES` | `8.0` |
