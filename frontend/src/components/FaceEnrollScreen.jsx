@@ -10,7 +10,7 @@ import { enrollFace } from '../services/api';
  * No emojis used.
  */
 export default function FaceEnrollScreen() {
-  const { authToken, setCurrentScreen, syncBackendData, setUser } = useApp();
+  const { authToken, setAuthToken, setCurrentScreen, syncBackendData, setUser } = useApp();
 
   const [consentChecked, setConsentChecked] = useState(false);
   const [enrollState, setEnrollState] = useState('IDLE'); // 'IDLE', 'CAPTURING', 'ENROLLED', 'ERROR'
@@ -131,16 +131,19 @@ export default function FaceEnrollScreen() {
     };
   }, [cameraRetry]);
 
-  // Perform multi-frame enrollment capture
-  const startEnrollment = useCallback(async () => {
+  const handleStartEnrollment = useCallback(async () => {
     if (cameraStatus !== 'ACTIVE') {
-      setErrorMessage('La caméra doit être active pour capturer votre visage.');
+      setEnrollState('ERROR');
+      setErrorMessage('La caméra doit être active pour enregistrer votre visage.');
       return;
     }
+
     if (!consentChecked) {
-      setErrorMessage('Veuillez cocher la case de consentement RGPD pour continuer.');
+      setEnrollState('ERROR');
+      setErrorMessage('Veuillez accepter le consentement biométrique pour continuer.');
       return;
     }
+
     if (isEnrollingRef.current) return;
     isEnrollingRef.current = true;
     setEnrollState('CAPTURING');
@@ -166,8 +169,13 @@ export default function FaceEnrollScreen() {
       }
 
       // Call backend enrollment endpoint with real camera frames
+      let latestToken = authToken;
       if (authToken) {
-        await enrollFace(frames, authToken);
+        const enrollRes = await enrollFace(frames, authToken);
+        if (enrollRes?.token?.access_token && setAuthToken) {
+          latestToken = enrollRes.token.access_token;
+          setAuthToken(latestToken);
+        }
       } else {
         throw new Error('Session non authentifiée. Veuillez vous reconnecter.');
       }
@@ -178,8 +186,8 @@ export default function FaceEnrollScreen() {
       }
       await sleep(1000);
 
-      if (authToken) {
-        await syncBackendData(authToken);
+      if (latestToken) {
+        await syncBackendData(latestToken);
       }
       setCurrentScreen('HOME');
     } catch (err) {
@@ -188,7 +196,7 @@ export default function FaceEnrollScreen() {
     } finally {
       isEnrollingRef.current = false;
     }
-  }, [cameraStatus, consentChecked, captureCurrentFrameB64, authToken, setUser, syncBackendData, setCurrentScreen]);
+  }, [cameraStatus, consentChecked, captureCurrentFrameB64, authToken, setAuthToken, setUser, syncBackendData, setCurrentScreen]);
 
   const handleSkip = () => {
     setCurrentScreen('HOME');
@@ -219,212 +227,168 @@ export default function FaceEnrollScreen() {
           <h2 className="text-[20px] font-semibold text-[#0f1a1d] tracking-tight">
             Activer la reconnaissance faciale
           </h2>
-          <p className="text-xs text-[#55636a] max-w-[300px] mt-1 leading-relaxed">
-            Sécurisez vos connexions et paiements avec votre visage. Vos photos brutes ne sont jamais conservées.
+          <p className="text-xs text-[#55636a] mt-1 max-w-[290px] leading-relaxed">
+            Regardez la caméra et tournez lentement la tête de gauche à droite pour enregistrer votre profil sécurisé.
           </p>
         </div>
 
-        {/* Central Camera Viewport */}
-        <div className="mt-4 mb-2 flex flex-col items-center">
-          <div
-            className={`w-52 h-52 rounded-full overflow-hidden border-4 relative mx-auto flex items-center justify-center transition-colors duration-300 shadow-md ${
-              enrollState === 'ENROLLED'
-                ? 'border-[#1e7a45] shadow-[0_0_24px_rgba(30,122,69,0.35)]'
-                : enrollState === 'ERROR' || cameraStatus === 'ERROR'
-                ? 'border-[#c81e1e] shadow-[0_0_24px_rgba(200,30,30,0.35)]'
-                : enrollState === 'CAPTURING'
-                ? 'border-[#0e5a6b] shadow-[0_0_20px_rgba(14,90,107,0.25)]'
-                : cameraStatus === 'ACTIVE'
-                ? 'border-[#0e5a6b]'
-                : 'border-[#d5dcdf]'
-            }`}
-          >
+        {/* Video Viewport */}
+        <div className="mt-4 px-6 flex flex-col items-center">
+          <div className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-[#0e5a6b] shadow-md bg-black flex items-center justify-center">
             {/* Live Camera Video */}
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className={`w-full h-full object-cover scale-x-[-1] ${
-                cameraStatus === 'ACTIVE' ? 'block' : 'hidden'
+              className={`w-full h-full object-cover transform -scale-x-100 ${
+                cameraStatus === 'ACTIVE' ? 'opacity-100' : 'opacity-0'
               }`}
             />
 
-            {/* Camera Checking / Initializing placeholder */}
-            {cameraStatus === 'CHECKING' && (
-              <div className="w-full h-full bg-[#f0f4f6] flex flex-col items-center justify-center text-[#55636a] p-4 text-center">
-                <Loader2 className="w-10 h-10 animate-spin text-[#0e5a6b] mb-2" />
-                <span className="text-xs font-medium">Activation de la caméra...</span>
-              </div>
-            )}
-
-            {/* Camera Error / Inactive placeholder */}
-            {cameraStatus === 'ERROR' && (
-              <div className="w-full h-full bg-[#ffdad6]/40 flex flex-col items-center justify-center text-[#93000a] p-4 text-center">
-                <CameraOff className="w-12 h-12 stroke-[1.5] text-[#ba1a1a] mb-1" />
-                <span className="text-xs font-semibold">Caméra inactive</span>
-              </div>
-            )}
-
+            {/* Hidden canvas for capturing frame snapshots */}
             <canvas ref={canvasRef} className="hidden" />
 
-            {/* Target Reticles (active only when camera is live) */}
-            {cameraStatus === 'ACTIVE' && (
-              <svg
-                className="absolute inset-0 w-full h-full pointer-events-none p-5"
-                viewBox="0 0 100 100"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M 20 30 L 20 20 L 30 20 M 70 20 L 80 20 L 80 30 M 80 70 L 80 80 L 70 80 M 30 80 L 20 80 L 20 70"
-                  stroke={
-                    enrollState === 'ENROLLED'
-                      ? '#1e7a45'
-                      : enrollState === 'ERROR'
-                      ? '#c81e1e'
-                      : '#0e5a6b'
-                  }
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  opacity={enrollState === 'IDLE' ? 0.6 : 0.9}
-                />
-              </svg>
-            )}
-
-            {/* Laser scanning line during capture */}
-            {enrollState === 'CAPTURING' && (
-              <div className="absolute left-6 right-6 h-[2px] bg-[#0e5a6b] shadow-[0_0_8px_#0e5a6b] animate-scanline pointer-events-none" />
-            )}
-
-            {/* Success Overlay */}
-            {enrollState === 'ENROLLED' && (
-              <div className="absolute inset-0 bg-[#1e7a45]/20 flex items-center justify-center backdrop-blur-[1px] animate-fadeIn">
-                <CheckCircle2 className="w-16 h-16 text-[#1e7a45] fill-white stroke-[2.5]" />
+            {/* Camera loading state */}
+            {cameraStatus === 'CHECKING' && (
+              <div className="absolute inset-0 bg-[#0f1a1d] flex flex-col items-center justify-center p-4 text-center">
+                <Loader2 className="w-8 h-8 text-[#0e5a6b] animate-spin mb-2" />
+                <span className="text-xs text-white font-medium">Activation de la caméra...</span>
               </div>
             )}
 
-            {/* Error Overlay */}
-            {enrollState === 'ERROR' && (
-              <div className="absolute inset-0 bg-[#3d1714]/40 flex items-center justify-center backdrop-blur-[1px] animate-fadeIn">
-                <AlertCircle className="w-16 h-16 text-[#f47066] stroke-[2.5]" />
-              </div>
-            )}
-          </div>
-
-          {/* Status and Progress Indicator */}
-          <div className="mt-3 px-6 text-center min-h-[36px] flex flex-col items-center justify-center">
+            {/* Camera error fallback */}
             {cameraStatus === 'ERROR' && (
-              <div className="flex flex-col items-center gap-1.5 max-w-[320px]">
-                <div className="bg-[#ffdad6] text-[#93000a] text-xs p-2.5 rounded-xl flex items-start gap-2 shadow-xs text-left">
-                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#ba1a1a]" />
-                  <span>{cameraError || 'La caméra doit être activée pour enregistrer votre visage.'}</span>
-                </div>
+              <div className="absolute inset-0 bg-[#1c2427] flex flex-col items-center justify-center p-4 text-center">
+                <CameraOff className="w-10 h-10 text-[#f47066] mb-2" />
+                <span className="text-xs text-white font-medium mb-1">Caméra indisponible</span>
+                <p className="text-[11px] text-[#9aa5aa] leading-tight mb-3 px-2">
+                  {cameraError || "Vérifiez les permissions de votre navigateur."}
+                </p>
                 <button
                   type="button"
                   onClick={retryCamera}
-                  className="text-xs text-[#0e5a6b] font-medium hover:underline cursor-pointer inline-flex items-center gap-1 mt-0.5"
+                  className="px-3 py-1.5 rounded-lg bg-[#0e5a6b] hover:bg-[#0a4552] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Réessayer d&apos;activer la caméra</span>
-                </button>
-              </div>
-            )}
-
-            {cameraStatus === 'ACTIVE' && enrollState === 'IDLE' && (
-              <p className="text-[12px] text-[#55636a] max-w-[280px]">
-                Caméra active. Tournez lentement la tête de gauche à droite pendant la capture.
-              </p>
-            )}
-
-            {enrollState === 'CAPTURING' && (
-              <div className="flex flex-col items-center gap-1">
-                <span className="font-mono text-xs text-[#0e5a6b] font-semibold animate-pulse inline-flex items-center gap-1.5">
-                  <span aria-hidden="true">●</span> Enregistrement ({capturedCount}/{totalFrames})...
-                </span>
-                <div className="w-36 h-1.5 bg-[#d5dcdf] rounded-full overflow-hidden mt-0.5">
-                  <div
-                    className="h-full bg-[#0e5a6b] transition-all duration-150 rounded-full"
-                    style={{ width: `${(capturedCount / totalFrames) * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {enrollState === 'ENROLLED' && (
-              <span className="text-[#1e7a45] font-semibold text-xs inline-flex items-center gap-1.5 bg-[#def2e5] px-3 py-1 rounded-full shadow-2xs">
-                <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                <span>Visage enregistré avec succès</span>
-              </span>
-            )}
-
-            {enrollState === 'ERROR' && (
-              <div className="flex flex-col items-center gap-1">
-                <span className="text-[#c81e1e] font-semibold text-xs bg-[#fde8e8] px-3 py-1 rounded-lg border border-[#f8b4b4] max-w-[320px]">
-                  {errorMessage}
-                </span>
-                <button
-                  type="button"
-                  onClick={startEnrollment}
-                  className="text-xs text-[#0e5a6b] font-medium hover:underline mt-1 cursor-pointer inline-flex items-center gap-1"
-                >
-                  <RefreshCw className="w-3 h-3" />
                   <span>Réessayer</span>
                 </button>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* GDPR Explicit Consent Box (Art. 9) */}
-        <div className="px-6 mt-1">
-          <label className="flex items-start gap-2.5 p-3 rounded-xl bg-white border border-[#d5dcdf] cursor-pointer hover:border-[#7f8c93] transition-colors shadow-2xs">
-            <input
-              type="checkbox"
-              checked={consentChecked}
-              onChange={(e) => {
-                setConsentChecked(e.target.checked);
-                if (errorMessage) setErrorMessage('');
-              }}
-              disabled={enrollState === 'CAPTURING'}
-              className="mt-0.5 w-4 h-4 rounded text-[#0e5a6b] focus:ring-[#0e5a6b] cursor-pointer"
-            />
-            <span className="text-[11px] text-[#55636a] leading-tight">
-              J&apos;accepte le traitement de mes données biométriques (RGPD art. 9). Seul un gabarit chiffré
-              (AES-256) est conservé, aucune photo n&apos;est stockée.
-            </span>
-          </label>
+            {/* Scanning Overlay Animation */}
+            {enrollState === 'CAPTURING' && cameraStatus === 'ACTIVE' && (
+              <div className="absolute inset-0 bg-[#0e5a6b]/20 flex flex-col items-center justify-center">
+                <div className="w-full h-1 bg-[#22c55e] absolute top-0 animate-pulse shadow-[0_0_12px_#22c55e]" />
+                <div className="bg-black/75 px-3 py-1.5 rounded-full text-white text-xs font-mono font-medium backdrop-blur-xs">
+                  Enregistrement {capturedCount}/{totalFrames}
+                </div>
+              </div>
+            )}
+
+            {/* Success Overlay */}
+            {enrollState === 'ENROLLED' && (
+              <div className="absolute inset-0 bg-[#13532a]/85 backdrop-blur-xs flex flex-col items-center justify-center text-white animate-fadeIn">
+                <CheckCircle2 className="w-14 h-14 mb-1 text-white stroke-[2]" />
+                <span className="text-sm font-semibold tracking-tight">Profil biométrique activé</span>
+                <span className="text-xs opacity-90 font-mono mt-0.5">
+                  100% sécurisé (RGPD Art. 9)
+                </span>
+              </div>
+            )}
+
+            {/* Error Overlay */}
+            {enrollState === 'ERROR' && cameraStatus === 'ACTIVE' && (
+              <div className="absolute inset-0 bg-[#3d1714]/85 backdrop-blur-xs flex flex-col items-center justify-center text-[#f47066] p-4 text-center animate-fadeIn">
+                <AlertCircle className="w-12 h-12 mb-1.5 stroke-[2]" />
+                <span className="text-xs font-semibold text-white leading-tight">
+                  Échec d&apos;enregistrement
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Feedback error notice below viewport */}
+          {enrollState === 'ERROR' && errorMessage && (
+            <div className="mt-2.5 mx-2 p-2.5 rounded-xl bg-[#fde8e8] border border-[#f8b4b4] text-[#c81e1e] text-xs flex items-center gap-2 shadow-2xs">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span className="leading-tight">{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Explicit GDPR Consent Checkbox */}
+          <div className="mt-4 px-2">
+            <label className="flex items-start gap-2.5 cursor-pointer text-left">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => setConsentChecked(e.target.checked)}
+                className="mt-0.5 w-4 h-4 text-[#0e5a6b] rounded border-[#d5dcdf] focus:ring-[#0e5a6b]"
+              />
+              <span className="text-[11px] text-[#55636a] leading-tight">
+                J&apos;accepte le traitement de mes données biométriques (embeddings chiffrés, aucune photo stockée) conformément à l&apos;article 9 du RGPD.
+              </span>
+            </label>
+          </div>
         </div>
       </div>
 
       {/* Action Buttons */}
-      <div className="px-6 flex flex-col gap-2 pt-2">
-        <button
-          type="button"
-          onClick={startEnrollment}
-          disabled={cameraStatus !== 'ACTIVE' || !consentChecked || enrollState === 'CAPTURING' || enrollState === 'ENROLLED'}
-          className="w-full h-11 rounded-xl bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <ScanFace className="w-4 h-4" />
-          <span>
-            {cameraStatus === 'CHECKING'
-              ? 'Activation de la caméra...'
-              : cameraStatus === 'ERROR'
-              ? 'Caméra requise pour enrôlement'
-              : enrollState === 'CAPTURING'
-              ? 'Capture en cours...'
-              : "Démarrer l'enregistrement biométrique"}
-          </span>
-        </button>
+      <div className="px-5 pt-4 pb-1 flex flex-col gap-2">
+        {enrollState === 'IDLE' && (
+          <button
+            type="button"
+            disabled={!consentChecked || cameraStatus !== 'ACTIVE'}
+            onClick={handleStartEnrollment}
+            className="w-full h-11 bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ScanFace className="w-4 h-4" />
+            <span>Commencer l&apos;enregistrement</span>
+          </button>
+        )}
+
+        {enrollState === 'CAPTURING' && (
+          <button
+            type="button"
+            disabled
+            className="w-full h-11 bg-[#55636a] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs cursor-wait"
+          >
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Analyse InsightFace en cours...</span>
+          </button>
+        )}
+
+        {enrollState === 'ENROLLED' && (
+          <button
+            type="button"
+            disabled
+            className="w-full h-11 bg-[#1e7a45] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Enregistrement terminé</span>
+          </button>
+        )}
+
+        {enrollState === 'ERROR' && (
+          <button
+            type="button"
+            onClick={() => {
+              setEnrollState('IDLE');
+              setErrorMessage('');
+            }}
+            className="w-full h-11 bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Réessayer</span>
+          </button>
+        )}
 
         <button
           type="button"
           onClick={handleSkip}
-          disabled={enrollState === 'CAPTURING'}
-          className="text-xs text-[#55636a] hover:text-[#0f1a1d] py-1 text-center font-medium cursor-pointer"
+          className="w-full h-10 text-xs font-semibold text-[#55636a] hover:text-[#0f1a1d] transition-colors cursor-pointer"
         >
-          Configurer plus tard
+          Passer cette étape
         </button>
       </div>
     </div>

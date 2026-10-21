@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AlertCircle } from 'lucide-react';
 import Header from './Header';
 import { useApp } from '../context/useApp';
 
@@ -18,6 +19,8 @@ export default function VerifyScreen() {
     sendReason,
     setSendReason,
     start2FAPayment,
+    paymentError,
+    setPaymentError,
     setCurrentScreen,
   } = useApp();
 
@@ -25,6 +28,7 @@ export default function VerifyScreen() {
 
   const handleSend = () => {
     if (isIncident) return;
+    if (setPaymentError) setPaymentError('');
     // Launch 2FA biometric verification step before money transfer
     start2FAPayment();
   };
@@ -40,6 +44,22 @@ export default function VerifyScreen() {
         <Header showBack onBack={() => setCurrentScreen('SEND_CONTACT')} />
 
         <div className="px-5 py-3 flex flex-col gap-4">
+          {/* Payment Error Banner */}
+          {paymentError && (
+            <div
+              role="alert"
+              className="bg-[#fde8e8] text-[#c81e1e] border border-[#f8b4b4] rounded-xl p-3.5 flex items-start gap-2.5 shadow-xs animate-fadeIn text-xs"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-0.5">
+                <span className="font-semibold text-sm leading-snug">
+                  Échec de l&apos;envoi
+                </span>
+                <span className="leading-relaxed">{paymentError}</span>
+              </div>
+            </div>
+          )}
+
           {/* Incident Alert Banner */}
           {isIncident && (
             <div
@@ -114,7 +134,7 @@ export default function VerifyScreen() {
                     {selectedContact?.name || 'Destinataire'}
                   </span>
                   <span className="font-mono text-xs text-[#55636a]">
-                    {selectedContact?.phone || ''}
+                    {selectedContact?.phone || selectedContact?.email || ''}
                   </span>
                 </div>
               </div>
@@ -164,18 +184,23 @@ export default function VerifyScreen() {
             >
               Envoi suspendu
             </button>
-            <p className="text-xs text-[#55636a] text-center leading-relaxed">
-              Le bouton revient dès qu&apos;un virement test a réussi.
+            <p className="text-xs text-[#55636a] text-center leading-tight">
+              Nos équipes analysent l&apos;incident technique en cours.
             </p>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={handleSend}
-            className="w-full h-12 rounded-xl bg-[#0e5a6b] hover:bg-[#0a4552] active:scale-[0.99] text-white font-semibold text-[15px] flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
-          >
-            {`Envoyer ${formattedDisplayAmount}`}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={handleSend}
+              className="w-full h-12 rounded-xl bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-[15px] flex items-center justify-center transition-colors shadow-xs cursor-pointer"
+            >
+              Envoyer {formattedDisplayAmount}
+            </button>
+            <p className="text-xs text-[#55636a] text-center leading-tight">
+              Validation par reconnaissance faciale à l&apos;étape suivante.
+            </p>
+          </>
         )}
       </div>
     </div>

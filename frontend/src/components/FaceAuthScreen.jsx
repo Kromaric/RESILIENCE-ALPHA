@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, ScanFace, CheckCircle2, AlertCircle, ShieldCheck, ArrowRight, RefreshCw, CameraOff, Loader2 } from 'lucide-react';
 import { useApp } from '../context/useApp';
-import { loginFace } from '../services/api';
+import { loginFace, verifyFaceApi, getFaceChallengeApi } from '../services/api';
 
 /**
  * Screen: Biometric 2FA Face Recognition.
@@ -14,10 +14,12 @@ export default function FaceAuthScreen() {
   const {
     isIncident,
     user,
+    authToken,
     completeFaceAuth,
     on2FACancel,
     pending2FA,
     faceChallenge,
+    setFaceChallenge,
     sessionId,
     retry2FALogin,
     setCurrentScreen,
@@ -165,9 +167,16 @@ export default function FaceAuthScreen() {
         setErrorMessage(err.message || 'Impossible de renouveler la session de connexion.');
         return;
       }
+    } else if (isPaymentFlow && authToken) {
+      try {
+        const fresh = await getFaceChallengeApi(authToken);
+        if (setFaceChallenge) setFaceChallenge(fresh);
+      } catch {
+        // Keep existing challenge
+      }
     }
     setScanState('IDLE');
-  }, [isLoginFlow, retry2FALogin]);
+  }, [isLoginFlow, retry2FALogin, isPaymentFlow, authToken, setFaceChallenge]);
 
   // Perform multi-frame capture and biometric verification
   const runVerification = useCallback(async () => {
@@ -231,12 +240,22 @@ export default function FaceAuthScreen() {
         return;
       }
 
-      // Payment flow: confirm verification if face was enrolled
+      // Payment flow: perform real biometric face verification with backend!
       if (isPaymentFlow) {
-        setConfidence(98.4);
+        if (!authToken) {
+          throw new Error('Session expirée. Veuillez vous reconnecter.');
+        }
+
+        const verifyResponse = await verifyFaceApi(frames, direction, authToken);
+        setConfidence(verifyResponse.confidence || 98.4);
         setScanState('VERIFIED');
-        setTimeout(() => {
-          completeFaceAuth();
+        setTimeout(async () => {
+          try {
+            await completeFaceAuth(verifyResponse.token?.access_token);
+          } catch (payErr) {
+            setScanState('ERROR');
+            setErrorMessage(payErr.message || 'Le paiement a échoué.');
+          }
         }, 600);
         return;
       }
@@ -255,7 +274,20 @@ export default function FaceAuthScreen() {
     } finally {
       isCapturingRef.current = false;
     }
-  }, [cameraStatus, isPaymentFlow, isFaceEnrolled, isIncident, frameCount, captureCurrentFrameB64, intervalMs, isLoginFlow, sessionId, completeFaceAuth]);
+  }, [
+    cameraStatus,
+    isPaymentFlow,
+    isFaceEnrolled,
+    isIncident,
+    frameCount,
+    captureCurrentFrameB64,
+    intervalMs,
+    isLoginFlow,
+    sessionId,
+    authToken,
+    direction,
+    completeFaceAuth,
+  ]);
 
   // Payment flow without enrolled face view
   if (isPaymentFlow && !isFaceEnrolled) {
@@ -271,43 +303,40 @@ export default function FaceAuthScreen() {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-
-            <span className="bg-[#ffdad6] text-[#93000a] rounded-full px-2.5 py-0.5 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs">
-              <AlertCircle className="w-3.5 h-3.5" />
-              <span>Visage non enregistré</span>
+            <span className="bg-[#dcecef] text-[#0a4552] rounded-full px-2.5 py-0.5 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Confirmation requise</span>
             </span>
           </div>
 
           <div className="px-6 pt-6 text-center flex flex-col items-center">
-            <div className="w-20 h-20 rounded-full bg-[#ffdad6] text-[#ba1a1a] flex items-center justify-center mb-4 shadow-sm">
-              <ScanFace className="w-10 h-10 stroke-[1.5]" />
+            <div className="w-16 h-16 rounded-full bg-[#fde8e8] text-[#c81e1e] flex items-center justify-center mb-4">
+              <ScanFace className="w-8 h-8" />
             </div>
             <h2 className="text-[20px] font-semibold text-[#0f1a1d] tracking-tight">
-              Reconnaissance faciale requise
+              Visage non enregistré
             </h2>
-            <p className="text-xs text-[#55636a] max-w-[290px] mt-2 leading-relaxed">
-              Aucun visage n&apos;est enregistré sur ce compte. Vous devez d&apos;abord enregistrer votre visage
-              avec votre caméra pour valider les paiements sécurisés.
+            <p className="text-xs text-[#55636a] mt-2 max-w-[280px] leading-relaxed">
+              Pour des raisons de sécurité, chaque opération de paiement requiert une confirmation par reconnaissance faciale. Vous devez d&apos;abord enregistrer votre visage.
             </p>
           </div>
         </div>
 
-        <div className="px-6 flex flex-col gap-2 pt-4">
+        <div className="px-5 pt-4 pb-1 flex flex-col gap-2">
           <button
             type="button"
             onClick={() => setCurrentScreen('FACE_ENROLL')}
-            className="w-full h-11 rounded-xl bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+            className="w-full h-11 bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
           >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Enregistrer mon visage maintenant</span>
+            <span>Enregistrer mon visage</span>
+            <ArrowRight className="w-4 h-4" />
           </button>
-
           <button
             type="button"
             onClick={on2FACancel}
-            className="w-full py-2.5 px-3 rounded-xl bg-white border border-[#d5dcdf] text-[#55636a] hover:bg-[#f5f6f4] font-medium text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+            className="w-full h-10 text-xs font-semibold text-[#55636a] hover:text-[#0f1a1d] transition-colors cursor-pointer"
           >
-            <span>Annuler le transfert</span>
+            Annuler le paiement
           </button>
         </div>
       </div>
@@ -330,217 +359,173 @@ export default function FaceAuthScreen() {
 
           <span className="bg-[#dcecef] text-[#0a4552] rounded-full px-2.5 py-0.5 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>2FA Biométrique</span>
+            <span>Double authentification</span>
           </span>
         </div>
 
         {/* Title & Instructions */}
         <div className="px-6 pt-2 text-center flex flex-col items-center">
           <h2 className="text-[20px] font-semibold text-[#0f1a1d] tracking-tight">
-            Vérification biométrique
+            Reconnaissance faciale
           </h2>
-          <p className="text-xs text-[#55636a] max-w-[290px] mt-1 leading-relaxed">
-            Pour valider {isLoginFlow ? 'votre connexion' : 'votre paiement'}, confirmez votre visage.
+          <p className="text-xs text-[#55636a] mt-1 max-w-[280px] leading-relaxed">
+            Positionnez votre visage au centre du cadre et tournez lentement la tête vers la{' '}
+            <strong className="text-[#0e5a6b] font-semibold">
+              {direction === 'left' ? 'gauche' : 'droite'}
+            </strong>.
           </p>
-
-          {/* Liveness direction challenge banner */}
-          <div className="mt-3 w-full max-w-[310px] bg-[#0e5a6b]/10 border border-[#0e5a6b]/30 rounded-xl py-2 px-3 flex items-center justify-center gap-2">
-            {direction === 'left' ? (
-              <>
-                <ArrowLeft className="w-5 h-5 text-[#0e5a6b] animate-bounce" />
-                <span className="text-xs font-semibold text-[#0e5a6b] tracking-tight">
-                  Tournez lentement la tête vers la GAUCHE
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="text-xs font-semibold text-[#0e5a6b] tracking-tight">
-                  Tournez lentement la tête vers la DROITE
-                </span>
-                <ArrowRight className="w-5 h-5 text-[#0e5a6b] animate-bounce" />
-              </>
-            )}
-          </div>
         </div>
 
-        {/* Central Camera / Scanner Viewport */}
-        <div className="mt-4 mb-2 flex flex-col items-center">
-          <div
-            className={`w-56 h-56 rounded-full overflow-hidden border-4 relative mx-auto flex items-center justify-center transition-colors duration-300 shadow-md ${
-              scanState === 'VERIFIED'
-                ? 'border-[#1e7a45] shadow-[0_0_24px_rgba(30,122,69,0.35)]'
-                : scanState === 'ERROR' || cameraStatus === 'ERROR'
-                ? 'border-[#c81e1e] shadow-[0_0_24px_rgba(200,30,30,0.35)]'
-                : scanState === 'SCANNING'
-                ? 'border-[#0e5a6b] shadow-[0_0_20px_rgba(14,90,107,0.25)]'
-                : cameraStatus === 'ACTIVE'
-                ? 'border-[#0e5a6b]'
-                : 'border-[#d5dcdf]'
-            }`}
-          >
+        {/* Webcam Viewport */}
+        <div className="mt-4 px-6 flex flex-col items-center">
+          <div className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-[#0e5a6b] shadow-md bg-black flex items-center justify-center">
             {/* Live Camera Video */}
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className={`w-full h-full object-cover scale-x-[-1] ${
-                cameraStatus === 'ACTIVE' ? 'block' : 'hidden'
+              className={`w-full h-full object-cover transform -scale-x-100 ${
+                cameraStatus === 'ACTIVE' ? 'opacity-100' : 'opacity-0'
               }`}
             />
 
-            {/* Camera Checking / Initializing placeholder */}
-            {cameraStatus === 'CHECKING' && (
-              <div className="w-full h-full bg-[#f0f4f6] flex flex-col items-center justify-center text-[#55636a] p-4 text-center">
-                <Loader2 className="w-10 h-10 animate-spin text-[#0e5a6b] mb-2" />
-                <span className="text-xs font-medium">Activation de la caméra...</span>
-              </div>
-            )}
-
-            {/* Camera Error / Inactive placeholder */}
-            {cameraStatus === 'ERROR' && (
-              <div className="w-full h-full bg-[#ffdad6]/40 flex flex-col items-center justify-center text-[#93000a] p-4 text-center">
-                <CameraOff className="w-12 h-12 stroke-[1.5] text-[#ba1a1a] mb-1" />
-                <span className="text-xs font-semibold">Caméra inactive</span>
-              </div>
-            )}
-
+            {/* Hidden canvas for capturing frame snapshots */}
             <canvas ref={canvasRef} className="hidden" />
 
-            {/* Target Reticles (active when camera is live) */}
-            {cameraStatus === 'ACTIVE' && (
-              <svg
-                className="absolute inset-0 w-full h-full pointer-events-none p-5"
-                viewBox="0 0 100 100"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M 20 30 L 20 20 L 30 20 M 70 20 L 80 20 L 80 30 M 80 70 L 80 80 L 70 80 M 30 80 L 20 80 L 20 70"
-                  stroke={
-                    scanState === 'VERIFIED'
-                      ? '#1e7a45'
-                      : scanState === 'ERROR'
-                      ? '#c81e1e'
-                      : '#0e5a6b'
-                  }
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  opacity={scanState === 'IDLE' ? 0.6 : 0.9}
-                />
-              </svg>
+            {/* Camera loading state */}
+            {cameraStatus === 'CHECKING' && (
+              <div className="absolute inset-0 bg-[#0f1a1d] flex flex-col items-center justify-center p-4 text-center">
+                <Loader2 className="w-8 h-8 text-[#0e5a6b] animate-spin mb-2" />
+                <span className="text-xs text-white font-medium">Activation de la caméra...</span>
+              </div>
             )}
 
-            {/* Laser scanning line */}
-            {scanState === 'SCANNING' && (
-              <div className="absolute left-6 right-6 h-[2px] bg-[#0e5a6b] shadow-[0_0_8px_#0e5a6b] animate-scanline pointer-events-none" />
+            {/* Camera error fallback */}
+            {cameraStatus === 'ERROR' && (
+              <div className="absolute inset-0 bg-[#1c2427] flex flex-col items-center justify-center p-4 text-center">
+                <CameraOff className="w-10 h-10 text-[#f47066] mb-2" />
+                <span className="text-xs text-white font-medium mb-1">Caméra indisponible</span>
+                <p className="text-[11px] text-[#9aa5aa] leading-tight mb-3 px-2">
+                  {cameraError || "Vérifiez les permissions de votre navigateur."}
+                </p>
+                <button
+                  type="button"
+                  onClick={retryCamera}
+                  className="px-3 py-1.5 rounded-lg bg-[#0e5a6b] hover:bg-[#0a4552] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Réessayer</span>
+                </button>
+              </div>
             )}
 
-            {/* Verified Success Overlay */}
+            {/* Scanning Overlay Animation */}
+            {scanState === 'SCANNING' && cameraStatus === 'ACTIVE' && (
+              <div className="absolute inset-0 bg-[#0e5a6b]/20 flex flex-col items-center justify-center">
+                <div className="w-full h-1 bg-[#22c55e] absolute top-0 animate-pulse shadow-[0_0_12px_#22c55e]" />
+                <div className="bg-black/75 px-3 py-1.5 rounded-full text-white text-xs font-mono font-medium backdrop-blur-xs">
+                  Capture {capturedCount}/{frameCount}
+                </div>
+              </div>
+            )}
+
+            {/* Success Overlay */}
             {scanState === 'VERIFIED' && (
-              <div className="absolute inset-0 bg-[#1e7a45]/20 flex items-center justify-center backdrop-blur-[1px] animate-fadeIn">
-                <CheckCircle2 className="w-16 h-16 text-[#1e7a45] fill-white stroke-[2.5]" />
+              <div className="absolute inset-0 bg-[#13532a]/85 backdrop-blur-xs flex flex-col items-center justify-center text-white animate-fadeIn">
+                <CheckCircle2 className="w-14 h-14 mb-1 text-white stroke-[2]" />
+                <span className="text-sm font-semibold tracking-tight">Visage reconnu</span>
+                {confidence && (
+                  <span className="text-xs opacity-90 font-mono mt-0.5">
+                    Similarité : {confidence}%
+                  </span>
+                )}
               </div>
             )}
 
             {/* Error Overlay */}
-            {scanState === 'ERROR' && (
-              <div className="absolute inset-0 bg-[#3d1714]/40 flex items-center justify-center backdrop-blur-[1px] animate-fadeIn">
-                <AlertCircle className="w-16 h-16 text-[#f47066] stroke-[2.5]" />
+            {scanState === 'ERROR' && cameraStatus === 'ACTIVE' && (
+              <div className="absolute inset-0 bg-[#3d1714]/85 backdrop-blur-xs flex flex-col items-center justify-center text-[#f47066] p-4 text-center animate-fadeIn">
+                <AlertCircle className="w-12 h-12 mb-1.5 stroke-[2]" />
+                <span className="text-xs font-semibold text-white leading-tight">
+                  Échec de vérification
+                </span>
               </div>
             )}
           </div>
 
-          {/* Dynamic Status Label under Circle */}
-          <div className="mt-3 px-6 text-center min-h-[36px] flex flex-col items-center justify-center">
-            {cameraStatus === 'ERROR' && (
-              <div className="flex flex-col items-center gap-1.5 max-w-[320px]">
-                <div className="bg-[#ffdad6] text-[#93000a] text-xs p-2.5 rounded-xl flex items-start gap-2 shadow-xs text-left">
-                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#ba1a1a]" />
-                  <span>{cameraError || 'La caméra doit être activée pour procéder à la vérification.'}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={retryCamera}
-                  className="text-xs text-[#0e5a6b] font-medium hover:underline cursor-pointer inline-flex items-center gap-1 mt-0.5"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Réessayer d&apos;activer la caméra</span>
-                </button>
-              </div>
-            )}
-
-            {cameraStatus === 'ACTIVE' && scanState === 'IDLE' && (
-              <span className="font-mono text-xs text-[#55636a] font-medium">
-                Caméra prête. Placez votre visage au centre.
-              </span>
-            )}
-
-            {scanState === 'SCANNING' && (
-              <div className="flex flex-col items-center gap-1">
-                <span className="font-mono text-xs text-[#0e5a6b] font-semibold animate-pulse inline-flex items-center gap-1.5">
-                  <span aria-hidden="true">●</span> Analyse biométrique ({capturedCount}/{frameCount})...
-                </span>
-                <div className="w-32 h-1.5 bg-[#d5dcdf] rounded-full overflow-hidden mt-0.5">
-                  <div
-                    className="h-full bg-[#0e5a6b] transition-all duration-150 rounded-full"
-                    style={{ width: `${(capturedCount / frameCount) * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {scanState === 'VERIFIED' && (
-              <span className="text-[#1e7a45] font-semibold text-xs inline-flex items-center gap-1.5 bg-[#def2e5] px-3 py-1 rounded-full shadow-2xs">
-                <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                <span>Identité confirmée (Confiance : {confidence || '98,4'} %)</span>
-              </span>
-            )}
-
-            {scanState === 'ERROR' && (
-              <div className="flex flex-col items-center gap-1">
-                <span className="text-[#c81e1e] font-semibold text-xs bg-[#fde8e8] px-3 py-1 rounded-lg border border-[#f8b4b4] max-w-[320px]">
-                  {errorMessage}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleRetryVerification}
-                  className="text-xs text-[#0e5a6b] font-medium hover:underline mt-1 cursor-pointer inline-flex items-center gap-1"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>Réessayer la vérification</span>
-                </button>
-              </div>
-            )}
+          {/* Dynamic Liveness Instruction Guide Badge */}
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <div className="bg-[#dcecef] text-[#0a4552] px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs">
+              <ScanFace className="w-3.5 h-3.5" />
+              <span>Consigne : Tournez la tête vers la</span>
+              <strong className="underline underline-offset-2">
+                {direction === 'left' ? 'gauche' : 'droite'}
+              </strong>
+            </div>
           </div>
+
+          {/* Feedback error notice below viewport */}
+          {scanState === 'ERROR' && errorMessage && (
+            <div className="mt-2.5 mx-2 p-2.5 rounded-xl bg-[#fde8e8] border border-[#f8b4b4] text-[#c81e1e] text-xs flex items-center gap-2 shadow-2xs">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span className="leading-tight">{errorMessage}</span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Action Buttons */}
-      <div className="px-6 flex flex-col gap-2 pt-2">
-        <button
-          type="button"
-          onClick={runVerification}
-          disabled={cameraStatus !== 'ACTIVE' || scanState === 'SCANNING' || scanState === 'VERIFIED'}
-          className="w-full h-11 rounded-xl bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <ScanFace className="w-4 h-4" />
-          <span>
-            {cameraStatus === 'CHECKING'
-              ? 'Activation de la caméra...'
-              : cameraStatus === 'ERROR'
-              ? 'Caméra requise pour vérification'
-              : scanState === 'SCANNING'
-              ? 'Analyse en cours...'
-              : 'Démarrer la vérification biométrique'}
-          </span>
-        </button>
+      <div className="px-5 pt-4 pb-1 flex flex-col gap-2">
+        {scanState === 'IDLE' && (
+          <button
+            type="button"
+            disabled={cameraStatus !== 'ACTIVE'}
+            onClick={runVerification}
+            className="w-full h-11 bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ScanFace className="w-4 h-4" />
+            <span>Valider mon visage</span>
+          </button>
+        )}
+
+        {scanState === 'SCANNING' && (
+          <button
+            type="button"
+            disabled
+            className="w-full h-11 bg-[#55636a] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs cursor-wait"
+          >
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Vérification biométrique en cours...</span>
+          </button>
+        )}
+
+        {scanState === 'VERIFIED' && (
+          <button
+            type="button"
+            disabled
+            className="w-full h-11 bg-[#1e7a45] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Validation confirmée</span>
+          </button>
+        )}
+
+        {scanState === 'ERROR' && (
+          <button
+            type="button"
+            onClick={handleRetryVerification}
+            className="w-full h-11 bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Recommencer la vérification</span>
+          </button>
+        )}
 
         <button
           type="button"
           onClick={on2FACancel}
-          className="text-xs text-[#55636a] hover:text-[#0f1a1d] py-1 text-center font-medium cursor-pointer"
+          className="w-full h-10 text-xs font-semibold text-[#55636a] hover:text-[#0f1a1d] transition-colors cursor-pointer"
         >
           Annuler
         </button>

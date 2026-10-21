@@ -95,11 +95,23 @@ class FaceEnrollRequest(BaseModel):
     frames: list[str] = Field(min_length=1, max_length=30, description=FRAMES_DESCRIPTION)
 
 
+class FaceVerifyRequest(BaseModel):
+    frames: list[str] = Field(min_length=1, max_length=20, description=FRAMES_DESCRIPTION)
+    direction: Literal["left", "right"] | None = None
+
+
+class FaceVerifyResponse(BaseModel):
+    verified: bool
+    confidence: float
+    token: TokenResponse
+
+
 class FaceStatus(BaseModel):
     enrolled: bool
     templates: int
     model: str | None
     consent_at: str | None
+    token: TokenResponse | None = None
 
 
 class MeResponse(BaseModel):

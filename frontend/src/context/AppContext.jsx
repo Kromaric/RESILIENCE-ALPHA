@@ -10,6 +10,7 @@ import {
   createPaymentRequestApi,
   getMeProfile,
   loginWithPassword,
+  getFaceChallengeApi,
 } from '../services/api';
 
 export function AppProvider({ children }) {
@@ -66,6 +67,7 @@ export function AppProvider({ children }) {
   const [sendAmount, setSendAmount] = useState('10,00');
   const [sendReason, setSendReason] = useState('');
   const [transactions, setTransactions] = useState([]);
+  const [paymentError, setPaymentError] = useState('');
 
   // Pending 2FA flow tracking: null | { type: 'payment' } | { type: 'login', email, password, sessionId }
   const [pending2FA, setPending2FA] = useState(null);
@@ -101,25 +103,9 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  // Navigate to bottom tab
-  const navigateToTab = useCallback((tabId) => {
-    setActiveTab(tabId);
-    if (tabId === 'home') {
-      setCurrentScreen('HOME');
-    } else if (tabId === 'activity') {
-      setCurrentScreen('ACTIVITY');
-    } else if (tabId === 'receive') {
-      setCurrentScreen('RECEIVE');
-    } else if (tabId === 'send') {
-      setCurrentScreen('SEND_CONTACT');
-    }
-  }, []);
-
-  // Periodic health check probe
+  // Health check polling for resilience
   const pollHealth = useCallback(async () => {
-    if (manualOverride !== null) {
-      return;
-    }
+    if (manualOverride !== null) return;
     setIsCheckingHealth(true);
     try {
       const health = await checkBackendHealth();
@@ -131,21 +117,22 @@ export function AppProvider({ children }) {
     }
   }, [manualOverride]);
 
+  // Periodic health check every 30s
   useEffect(() => {
     let isMounted = true;
     const check = async () => {
-      if (manualOverride !== null) return;
+      if (!isMounted || manualOverride !== null) return;
+      setIsCheckingHealth(true);
       try {
         const health = await checkBackendHealth();
-        if (isMounted && manualOverride === null) {
-          setIsIncident(!health.operational);
-        }
+        if (isMounted) setIsIncident(!health.operational);
       } catch {
-        if (isMounted && manualOverride === null) {
-          setIsIncident(true);
-        }
+        if (isMounted) setIsIncident(true);
+      } finally {
+        if (isMounted) setIsCheckingHealth(false);
       }
     };
+
     check();
     const interval = setInterval(check, 30000);
     return () => {
@@ -175,6 +162,7 @@ export function AppProvider({ children }) {
           faceEnrolled: Boolean(meResult.face_enrolled),
           initials: (meResult.display_name || 'OR')
             .split(' ')
+            .filter(Boolean)
             .map((n) => n[0])
             .join('')
             .toUpperCase()
@@ -195,7 +183,7 @@ export function AppProvider({ children }) {
       if (Array.isArray(contactsResult)) {
         setContacts(contactsResult);
         if (contactsResult.length > 0) {
-          setSelectedContact(contactsResult[0]);
+          setSelectedContact((prev) => prev || contactsResult[0]);
         }
       }
 
@@ -244,57 +232,53 @@ export function AppProvider({ children }) {
     pollHealth();
   }, [pollHealth]);
 
-  // Execute payment transaction
-  const executePayment = useCallback(async () => {
+  // Execute payment transaction against payment-service
+  const executePayment = useCallback(async (tokenOverride) => {
+    setPaymentError('');
     const cleanAmount = parseFloat(sendAmount.replace(',', '.')) || 10;
     const amountCents = Math.round(cleanAmount * 100);
+    const activeToken = tokenOverride || authToken;
 
-    if (!isIncident && authToken) {
-      try {
-        await sendPaymentApi(
-          {
-            recipientId: selectedContact?.id,
-            recipient: selectedContact?.rawPhone || selectedContact?.phone || selectedContact?.email || '+33612345677',
-            amount_cents: amountCents,
-            description: sendReason || 'Paiement',
-            holder: user?.name || 'Titulaire',
-          },
-          authToken
-        );
-      } catch (err) {
-        console.warn('Backend payment rejected, recording local state:', err);
-      }
+    if (!activeToken) {
+      const err = new Error('Session expirée. Veuillez vous reconnecter.');
+      setPaymentError(err.message);
+      throw err;
     }
 
-    const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const amountFormatted = `− ${sendAmount.includes(',') ? sendAmount : sendAmount + ',00'} €`;
+    try {
+      const isContactUuid =
+        selectedContact?.id &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(selectedContact.id);
 
-    const newTx = {
-      id: `tx_${Date.now()}`,
-      section: "Aujourd'hui",
-      initials: selectedContact?.initials || 'DE',
-      counterparty: selectedContact?.name || 'Destinataire',
-      subtitle: `${sendReason || 'Paiement'} · ${timeStr}`,
-      amountFormatted: amountFormatted,
-      amountNum: -cleanAmount,
-      type: 'sent',
-      status: 'Envoyé',
-      statusSymbol: '●',
-      isFailed: false,
-      date: now,
-    };
+      const recipientValue =
+        selectedContact?.email ||
+        selectedContact?.rawPhone ||
+        selectedContact?.phone ||
+        '';
 
-    setTransactions((prev) => [newTx, ...prev]);
+      const paymentResult = await sendPaymentApi(
+        {
+          recipientId: isContactUuid ? selectedContact.id : undefined,
+          recipient: recipientValue,
+          amount_cents: amountCents,
+          description: sendReason || 'Paiement',
+          holder: user?.name || 'Titulaire',
+        },
+        activeToken
+      );
 
-    // Resynchronize backend data in background
-    if (authToken) {
-      syncBackendData(authToken);
+      // Resynchronize backend data to immediately display newly created transaction in Activity
+      await syncBackendData(activeToken);
+
+      setCurrentScreen('ACTIVITY');
+      setActiveTab('activity');
+      return paymentResult;
+    } catch (err) {
+      console.error('Backend payment error:', err);
+      setPaymentError(err.message || 'Le paiement a été rejeté.');
+      throw err;
     }
-
-    setCurrentScreen('ACTIVITY');
-    setActiveTab('activity');
-  }, [authToken, isIncident, selectedContact, sendAmount, sendReason, user, syncBackendData]);
+  }, [authToken, selectedContact, sendAmount, sendReason, user, syncBackendData]);
 
   // Start 2FA login flow against auth-service /login with custom credentials
   const start2FALogin = useCallback(async (email, password) => {
@@ -343,12 +327,22 @@ export function AppProvider({ children }) {
     return null;
   }, [pending2FA]);
 
-  // Start 2FA payment flow
-  const start2FAPayment = useCallback(() => {
-    setFaceChallenge({ direction: 'right', frames: 8, interval_ms: 250 });
+  // Start 2FA payment flow with a fresh challenge from auth-service
+  const start2FAPayment = useCallback(async () => {
+    setPaymentError('');
+    try {
+      if (authToken) {
+        const challenge = await getFaceChallengeApi(authToken);
+        setFaceChallenge(challenge);
+      } else {
+        setFaceChallenge({ direction: 'right', frames: 8, interval_ms: 250 });
+      }
+    } catch {
+      setFaceChallenge({ direction: 'right', frames: 8, interval_ms: 250 });
+    }
     setPending2FA({ type: 'payment' });
     setCurrentScreen('FACE_AUTH');
-  }, []);
+  }, [authToken]);
 
   // Complete face authentication and route to next screen
   const completeFaceAuth = useCallback(async (issuedToken) => {
@@ -366,7 +360,7 @@ export function AppProvider({ children }) {
       }
     } else if (pending2FA?.type === 'payment') {
       setPending2FA(null);
-      await executePayment();
+      await executePayment(token);
     }
   }, [authToken, setAuthToken, pending2FA, executePayment, syncBackendData]);
 
@@ -442,6 +436,14 @@ export function AppProvider({ children }) {
     setActiveTab('activity');
   };
 
+  // Direct tab navigation handler
+  const navigateToTab = useCallback((tabId) => {
+    setActiveTab(tabId);
+    if (tabId === 'home') setCurrentScreen('HOME');
+    else if (tabId === 'activity') setCurrentScreen('ACTIVITY');
+    else if (tabId === 'receive') setCurrentScreen('RECEIVE');
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -449,10 +451,21 @@ export function AppProvider({ children }) {
         setCurrentScreen,
         activeTab,
         setActiveTab,
+        navigateToTab,
         receiveSubTab,
         setReceiveSubTab,
+        activityFilter,
+        setActivityFilter,
+        isIncident,
+        isCheckingHealth,
+        triggerIncident,
+        restoreOperational,
+        resetToAutoDetection,
         user,
         setUser,
+        authToken,
+        setAuthToken,
+        syncBackendData,
         contacts,
         selectedContact,
         setSelectedContact,
@@ -461,33 +474,21 @@ export function AppProvider({ children }) {
         sendReason,
         setSendReason,
         transactions,
-        activityFilter,
-        setActivityFilter,
-        isIncident,
-        isCheckingHealth,
-        triggerIncident,
-        restoreOperational,
-        resetToAutoDetection,
-        pollHealth,
-        handleLogout,
+        executePayment,
+        paymentError,
+        setPaymentError,
+        executeCreateRequest,
+        qrData,
+        faceChallenge,
+        sessionId,
+        pending2FA,
         start2FALogin,
         retry2FALogin,
         start2FAPayment,
         completeFaceAuth,
         on2FASuccess,
         on2FACancel,
-        pending2FA,
-        faceChallenge,
-        setFaceChallenge,
-        sessionId,
-        setSessionId,
-        authToken,
-        setAuthToken,
-        qrData,
-        syncBackendData,
-        executePayment,
-        executeCreateRequest,
-        navigateToTab,
+        handleLogout,
         loginNotice,
         setLoginNotice,
         prefilledEmail,

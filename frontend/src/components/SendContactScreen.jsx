@@ -9,21 +9,62 @@ import { useApp } from '../context/useApp';
  * No emojis used.
  */
 export default function SendContactScreen() {
-  const { contacts, setSelectedContact, setSendAmount, setSendReason, setCurrentScreen, navigateToTab } = useApp();
+  const { contacts, user, setSelectedContact, setSendAmount, setSendReason, setCurrentScreen, navigateToTab } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Suggested demo recipients registered on the platform
+  const suggestedRecipients = useMemo(() => {
+    const defaultList = [
+      {
+        id: 'lea-orbe-test',
+        name: 'Léa Martin',
+        email: 'lea@orbe.test',
+        phone: '+33612345677',
+        rawPhone: '+33612345677',
+        initials: 'LM',
+        defaultAmount: '10,00',
+        defaultReason: 'Virement',
+      },
+      {
+        id: 'hugo-orbe-test',
+        name: 'Hugo Bernard',
+        email: 'hugo@orbe.test',
+        phone: '+33612345676',
+        rawPhone: '+33612345676',
+        initials: 'HB',
+        defaultAmount: '10,00',
+        defaultReason: 'Virement',
+      },
+      {
+        id: 'camille-orbe-test',
+        name: 'Camille Test',
+        email: 'camille@orbe.test',
+        phone: '+33612345678',
+        rawPhone: '+33612345678',
+        initials: 'CT',
+        defaultAmount: '10,00',
+        defaultReason: 'Virement',
+      },
+    ];
+    // Filter out the currently logged in user to prevent self-transfer
+    return defaultList.filter((r) => r.email !== user?.email);
+  }, [user?.email]);
+
+  // Combined list with user contacts prioritized
+  const effectiveContacts = contacts.length > 0 ? contacts : suggestedRecipients;
 
   // Filter contacts in real time by name, phone or email
   const filteredContacts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return contacts;
-    return contacts.filter(
+    if (!q) return effectiveContacts;
+    return effectiveContacts.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.phone.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
+        (c.email && c.email.toLowerCase().includes(q)) ||
         (c.rawPhone && c.rawPhone.includes(q))
     );
-  }, [contacts, searchQuery]);
+  }, [effectiveContacts, searchQuery]);
 
   const handleSelectContact = (contact) => {
     setSelectedContact(contact);
@@ -34,12 +75,13 @@ export default function SendContactScreen() {
 
   const handleSelectCustom = (query) => {
     const trimmed = query.trim();
+    const isEmail = trimmed.includes('@');
     const contact = {
       id: trimmed,
       name: trimmed,
-      phone: trimmed,
-      rawPhone: trimmed,
-      email: trimmed.includes('@') ? trimmed : '',
+      phone: isEmail ? '' : trimmed,
+      rawPhone: isEmail ? '' : trimmed,
+      email: isEmail ? trimmed.toLowerCase() : '',
       initials: (trimmed.slice(0, 2) || 'DE').toUpperCase(),
       defaultAmount: '10,00',
       defaultReason: 'Virement',
@@ -77,7 +119,7 @@ export default function SendContactScreen() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Numéro de mobile, email ou nom"
+              placeholder="Email (ex: lea@orbe.test) ou mobile"
               className="w-full h-11 pl-10 pr-4 bg-white border border-[#d5dcdf] rounded-xl text-[14px] text-[#0f1a1d] placeholder-[#7f8c93] focus:border-[#0e5a6b] focus:outline-none transition-colors shadow-xs"
             />
           </div>
@@ -86,7 +128,7 @@ export default function SendContactScreen() {
         {/* Contacts Section */}
         <div className="flex flex-col gap-2">
           <span className="text-xs font-semibold text-[#55636a]">
-            {filteredContacts.length > 0 ? 'Contacts enregistrés' : 'Destinataire'}
+            {contacts.length > 0 ? 'Contacts enregistrés' : 'Destinataires disponibles'}
           </span>
 
           <div className="bg-white border border-[#d5dcdf] rounded-xl overflow-hidden divide-y divide-[#d5dcdf] shadow-xs">
@@ -107,7 +149,7 @@ export default function SendContactScreen() {
                         {contact.name}
                       </span>
                       <span className="font-mono text-xs text-[#55636a]">
-                        {contact.phone}
+                        {contact.email || contact.phone}
                       </span>
                     </div>
                   </div>
@@ -142,7 +184,7 @@ export default function SendContactScreen() {
               </button>
             ) : (
               <div className="p-6 text-center text-xs text-[#55636a] leading-relaxed">
-                Aucun contact enregistré. Saisissez un numéro de mobile ou une adresse email ci-dessus pour envoyer de l&apos;argent.
+                Saisissez un numéro de mobile ou une adresse email ci-dessus pour envoyer de l&apos;argent.
               </div>
             )}
           </div>

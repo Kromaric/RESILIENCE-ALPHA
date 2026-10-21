@@ -62,6 +62,8 @@ services:
       AUTH_ENABLE_DOCS: "true"
       AUTH_LOG_LEVEL: INFO
     secrets: [auth_db_password, jwt_private_key, face_embedding_key]
+    volumes:
+      - ./services/auth-service/app:/opt/venv/lib/python3.12/site-packages/app:ro
     depends_on:
       mariadb: { condition: service_healthy }
     ports:
@@ -78,6 +80,8 @@ services:
       PAYMENT_ENABLE_DOCS: "true"
       PAYMENT_LOG_LEVEL: INFO
     secrets: [payment_db_password, jwt_public_key]
+    volumes:
+      - ./services/payment-service/app:/usr/local/lib/python3.12/site-packages/app:ro
     depends_on:
       mariadb: { condition: service_healthy }
     ports:

@@ -13,6 +13,22 @@ const STATUS_URL = import.meta.env.VITE_STATUS_URL || '/api/status';
 const REQUEST_TIMEOUT_MS = 15000;
 
 /**
+ * Generate a cryptographically strong UUID v4 string.
+ *
+ * @returns {string}
+ */
+export function generateUuid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
  * Fetch wrapper with timeout and error interception for resilience.
  *
  * @param {string} url
@@ -156,11 +172,65 @@ export async function loginFace(sessionId, frames) {
 }
 
 /**
+ * Request a fresh head-turn liveness challenge for face verification.
+ *
+ * @param {string} token Bearer access token
+ * @returns {Promise<{ direction: 'left' | 'right', frames: number, interval_ms: number }>}
+ */
+export async function getFaceChallengeApi(token) {
+  const res = await fetchWithTimeout(`${AUTH_URL}/face/challenge`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail?.message || 'Impossible de récupérer la consigne biométrique');
+  }
+
+  return await res.json();
+}
+
+/**
+ * Verify user facial biometrics against enrolled templates for active session.
+ *
+ * @param {string[]} frames Base64 encoded JPEG strings
+ * @param {'left' | 'right' | null} direction
+ * @param {string} token Bearer access token
+ * @returns {Promise<{ verified: boolean, confidence: number, token: { access_token: string, expires_in: number, factors: string[] } }>}
+ */
+export async function verifyFaceApi(frames, direction, token) {
+  const res = await fetchWithTimeout(`${AUTH_URL}/face/verify`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      frames,
+      direction: direction || null,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const message = err.detail?.message || 'Visage non reconnu';
+    const errorObj = new Error(message);
+    errorObj.code = err.detail?.code || 'second_factor_failed';
+    errorObj.status = res.status;
+    throw errorObj;
+  }
+
+  return await res.json();
+}
+
+/**
  * Enroll user facial biometric data with explicit GDPR consent.
  *
  * @param {string[]} frames Base64 encoded JPEG strings
  * @param {string} token Bearer access token
- * @returns {Promise<{ enrolled: boolean, templates: number, model: string, consent_at: string }>}
+ * @returns {Promise<{ enrolled: boolean, templates: number, model: string, consent_at: string, token?: { access_token: string, expires_in: number, factors: string[] } }>}
  */
 export async function enrollFace(frames, token) {
   const res = await fetchWithTimeout(`${AUTH_URL}/face/enroll`, {
@@ -212,7 +282,8 @@ export async function getFaceEnrollmentStatus(token) {
  * Helper to fetch /me user profile details.
  *
  * @param {string} token
- * @returns {Promise<{ client_id: string, email: string, phone_masked: string, display_name: string, factors: string[] } | null>}\n */
+ * @returns {Promise<{ client_id: string, email: string, phone_masked: string, display_name: string, factors: string[], face_enrolled: boolean } | null>}
+ */
 export async function getMeProfile(token) {
   try {
     const res = await fetchWithTimeout(`${AUTH_URL}/me`, {
@@ -227,54 +298,6 @@ export async function getMeProfile(token) {
     // Non-blocking fallback
   }
   return null;
-}
-
-/**
- * Helper generating simulated face frames matching auth-service FakeFaceEngine format.
- * Used for demo bypass or simulated tests.
- *
- * @param {string} identity
- * @param {string} direction 'left' | 'right'
- * @param {number} count
- * @returns {string[]}
- */
-export function generateSimulatedLoginFrames(identity = 'camille', direction = 'left', count = 8) {
-  const sign = direction === 'left' ? 1 : -1;
-  const frames = [];
-  for (let i = 0; i < count; i++) {
-    const yaw = count > 1 ? sign * (20 * i / (count - 1)) : sign * 15;
-    const data = {
-      identity,
-      yaw: Math.round(yaw * 10) / 10,
-      quality: 0.9,
-      n: 100 + i,
-    };
-    frames.push(btoa(JSON.stringify(data)));
-  }
-  return frames;
-}
-
-/**
- * Helper generating simulated enrollment frames matching FakeFaceEngine format.
- * Sweeps from -30deg to +30deg.
- *
- * @param {string} identity
- * @param {number} count
- * @returns {string[]}
- */
-export function generateSimulatedEnrollFrames(identity = 'camille', count = 16) {
-  const frames = [];
-  for (let i = 0; i < count; i++) {
-    const yaw = -30 + (60 * i / (count - 1));
-    const data = {
-      identity,
-      yaw: Math.round(yaw * 10) / 10,
-      quality: 0.9,
-      n: i,
-    };
-    frames.push(btoa(JSON.stringify(data)));
-  }
-  return frames;
 }
 
 /**
@@ -337,6 +360,7 @@ export async function getContacts(token) {
           const name = c.alias || c.display_name || 'Contact';
           const initials = name
             .split(' ')
+            .filter(Boolean)
             .map((n) => n[0])
             .join('')
             .toUpperCase()
@@ -358,6 +382,34 @@ export async function getContacts(token) {
     // Fallback
   }
   return [];
+}
+
+/**
+ * Add a new contact to payment service address book.
+ *
+ * @param {string} contact Email or E.164 phone number
+ * @param {string} alias Friendly name
+ * @param {string} token
+ * @returns {Promise<{ contact_id: string, display_name: string, alias: string }>}
+ */
+export async function addContactApi(contact, alias, token) {
+  const res = await fetchWithTimeout(`${PAYMENT_URL}/contacts`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      contact,
+      alias: alias || undefined,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail?.message || "Impossible d'ajouter le contact");
+  }
+
+  return await res.json();
 }
 
 /**
@@ -383,7 +435,7 @@ export async function getQrCode(token) {
 }
 
 /**
- * Fetch transaction history from backend or fallback to initial dataset.
+ * Fetch transaction history from backend.
  *
  * @param {string} token
  * @returns {Promise<Array>}
@@ -399,7 +451,7 @@ export async function getTransactions(token) {
       const data = await res.json();
       if (Array.isArray(data.items) && data.items.length > 0) {
         return data.items.map((item) => {
-          const isDebit = item.direction === 'debit';
+          const isDebit = item.direction === 'sent';
           const amountEur = (item.amount_cents / 100).toFixed(2).replace('.', ',');
           const formattedAmount = isDebit ? `− ${amountEur} €` : `+ ${amountEur} €`;
           const isFailed = item.status === 'declined' || item.status === 'failed';
@@ -410,7 +462,7 @@ export async function getTransactions(token) {
           if (isFailed) {
             statusLabel = 'Échec';
             statusSymbol = '■';
-          } else if (item.direction === 'credit') {
+          } else if (item.direction === 'received') {
             statusLabel = 'Reçu';
             statusSymbol = '●';
           } else if (isRefund) {
@@ -421,23 +473,37 @@ export async function getTransactions(token) {
           const counterpartyName = item.counterparty || 'Destinataire';
           const initials = counterpartyName
             .split(' ')
+            .filter(Boolean)
             .map((n) => n[0])
             .join('')
             .toUpperCase()
             .slice(0, 2);
 
           const txDate = item.created_at ? new Date(item.created_at) : new Date();
+          const today = new Date();
+          const isToday = txDate.toDateString() === today.toDateString();
+          const yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          const isYesterday = txDate.toDateString() === yesterday.toDateString();
+
+          let section = "Aujourd'hui";
+          if (isYesterday) {
+            section = 'Hier';
+          } else if (!isToday) {
+            section = txDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+          }
+
           const timeStr = `${String(txDate.getHours()).padStart(2, '0')}:${String(txDate.getMinutes()).padStart(2, '0')}`;
 
           return {
             id: item.reference || `tx_${Math.random().toString(16).slice(2, 10)}`,
-            section: "Aujourd'hui",
-            initials: initials || 'CT',
+            section: section,
+            initials: initials || 'CO',
             counterparty: counterpartyName,
             subtitle: `${item.description || 'Paiement'} · ${timeStr}`,
             amountFormatted: formattedAmount,
             amountNum: isDebit ? -(item.amount_cents / 100) : item.amount_cents / 100,
-            type: isDebit ? 'sent' : 'received',
+            type: item.type === 'refund' ? 'refund' : isDebit ? 'sent' : 'received',
             status: statusLabel,
             statusSymbol: statusSymbol,
             isFailed: isFailed,
@@ -446,8 +512,8 @@ export async function getTransactions(token) {
         });
       }
     }
-  } catch {
-    // Return empty array to use mock dataset
+  } catch (err) {
+    console.warn('Failed to fetch transactions from payment service:', err);
   }
   return [];
 }
@@ -460,15 +526,12 @@ export async function getTransactions(token) {
  * @returns {Promise<Object>}
  */
 export async function sendPaymentApi(paymentData, token) {
-  const idempotencyKey =
-    typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `key-${Date.now()}`;
+  const idempotencyKey = generateUuid();
 
   const isUuid = paymentData.recipientId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paymentData.recipientId);
   const target = isUuid
     ? { recipient_contact: paymentData.recipientId }
-    : { recipient: paymentData.recipient || paymentData.recipientId || '+33612345677' };
+    : { recipient: (paymentData.recipient || paymentData.recipientId || '').trim() };
 
   const res = await fetchWithTimeout(`${PAYMENT_URL}/pay`, {
     method: 'POST',
@@ -495,7 +558,10 @@ export async function sendPaymentApi(paymentData, token) {
     return await res.json();
   }
   const errData = await res.json().catch(() => ({}));
-  throw new Error(errData.detail?.message || 'Payment rejected by server');
+  const errorObj = new Error(errData.detail?.message || 'Paiement refusé par le serveur');
+  errorObj.code = errData.detail?.code || 'payment_failed';
+  errorObj.status = res.status;
+  throw errorObj;
 }
 
 /**
@@ -506,10 +572,7 @@ export async function sendPaymentApi(paymentData, token) {
  * @returns {Promise<Object>}
  */
 export async function createPaymentRequestApi(requestData, token) {
-  const idempotencyKey =
-    typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `req-${Date.now()}`;
+  const idempotencyKey = generateUuid();
 
   const res = await fetchWithTimeout(`${PAYMENT_URL}/requests`, {
     method: 'POST',
@@ -520,13 +583,18 @@ export async function createPaymentRequestApi(requestData, token) {
     body: JSON.stringify({
       payer: requestData.payer,
       amount_cents: requestData.amount_cents,
-      description: requestData.description,
+      currency: 'EUR',
+      description: requestData.description || "Demande d'argent",
     }),
   });
 
-  if (res.ok) {
-    return await res.json();
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const errorObj = new Error(errData.detail?.message || 'Demande rejetée');
+    errorObj.code = errData.detail?.code || 'request_failed';
+    errorObj.status = res.status;
+    throw errorObj;
   }
-  const errData = await res.json().catch(() => ({}));
-  throw new Error(errData.detail?.message || 'Request creation failed');
+
+  return await res.json();
 }

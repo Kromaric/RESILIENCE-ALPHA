@@ -4,7 +4,7 @@ import { useApp } from '../context/useApp';
 /**
  * Screen 6: Activity History.
  * Filterable by pills: Tout, Envoyés, Reçus, Demandes.
- * Chronological sections: Aujourd'hui, Hier, 15 octobre.
+ * Chronological sections: Dynamically groups all transactions by day.
  * Includes failed transaction incident trace in red.
  * Amounts formatted with IBM Plex Mono and tabular-nums.
  * No emojis used.
@@ -28,12 +28,17 @@ export default function ActivityScreen() {
     return true;
   });
 
-  // Group by chronological sections
-  const sections = ["Aujourd'hui", 'Hier', '15 octobre'];
-  const grouped = sections.reduce((acc, sectionName) => {
-    acc[sectionName] = filteredTransactions.filter((tx) => tx.section === sectionName);
+  // Group transactions dynamically by section (Aujourd'hui, Hier, or Date)
+  const grouped = filteredTransactions.reduce((acc, tx) => {
+    const sectionName = tx.section || "Aujourd'hui";
+    if (!acc[sectionName]) {
+      acc[sectionName] = [];
+    }
+    acc[sectionName].push(tx);
     return acc;
   }, {});
+
+  const sections = Object.keys(grouped);
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto no-scrollbar">
@@ -84,7 +89,7 @@ export default function ActivityScreen() {
                 {/* Section Card */}
                 <div className="bg-white border border-[#d5dcdf] rounded-xl overflow-hidden divide-y divide-[#d5dcdf] shadow-xs">
                   {items.map((tx) => {
-                    const isFailed = tx.isFailed || tx.status === 'Échec';
+                    const isFailed = tx.isFailed || tx.status === 'Échec' || tx.status === 'declined' || tx.status === 'failed';
 
                     return (
                       <div
