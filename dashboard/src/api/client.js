@@ -35,11 +35,13 @@ export class ApiError extends Error {
 
 const UNREACHABLE = 'bo-api injoignable. La pile de développement est-elle lancée ?'
 
-export async function api(path, { method = 'GET', body, auth = true } = {}) {
+// `token` : jeton ponctuel (enrôlement de démarrage), envoyé même avec `auth: false`, à la place
+// du jeton de session
+export async function api(path, { method = 'GET', body, auth = true, token: oneOff } = {}) {
   const headers = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  const token = getToken()
-  if (auth && token) headers.Authorization = `Bearer ${token}`
+  const token = oneOff ?? (auth ? getToken() : null)
+  if (token) headers.Authorization = `Bearer ${token}`
 
   let res
   try {
