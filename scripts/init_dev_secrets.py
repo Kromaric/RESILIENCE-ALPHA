@@ -41,6 +41,8 @@ def main() -> None:
     for name in PASSWORDS:
         write_once(name, secrets.token_hex(24).encode())
     write_once("probe_api_key", f"orbe_sk_probe_{secrets.token_hex(16)}".encode())
+    # Clé AES-256 qui chiffre les gabarits de visage (perdue = visages à réenregistrer)
+    write_once("face_embedding_key", secrets.token_hex(32).encode())
 
     if not (SECRETS / "jwt_private_key.pem").exists():
         key = rsa.generate_private_key(public_exponent=65537, key_size=3072)

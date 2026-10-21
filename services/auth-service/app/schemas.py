@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -57,37 +57,49 @@ class TokenResponse(BaseModel):
     factors: list[str]
 
 
+class FaceChallenge(BaseModel):
+    """Consigne du test du vivant : filmer le visage pendant que la tête tourne dans ce sens."""
+
+    direction: Literal["left", "right"]
+    frames: int = Field(description="Nombre d'images à envoyer")
+    interval_ms: int = Field(default=250, description="Intervalle conseillé entre deux images")
+
+
 class LoginResponse(BaseModel):
     """Étape 1 de la connexion.
 
-    - `mfa_required = true` : valider la passkey avec `webauthn_options`, puis
-      `POST /login/passkey` ;
-    - sinon : `token` est fourni. `passkey_enrollment_required = true` signale un compte
-      sans passkey : la session ne permet que de consulter et d'enregistrer une passkey.
+    - `mfa_required = true` : filmer le visage selon `face_challenge`, puis `POST /login/face` ;
+    - sinon : `token` est fourni. `face_enrollment_required = true` signale un compte sans
+      visage enregistré : la session ne permet que de consulter et d'enrôler son visage.
     """
 
     mfa_required: bool
     session_id: str
-    webauthn_options: dict[str, Any] | None = None
+    face_challenge: FaceChallenge | None = None
     token: TokenResponse | None = None
-    passkey_enrollment_required: bool = False
+    face_enrollment_required: bool = False
 
 
-class PasskeyLoginRequest(BaseModel):
+FRAMES_DESCRIPTION = "Images JPEG encodées en base64, capturées par la caméra du navigateur"
+
+
+class FaceLoginRequest(BaseModel):
     session_id: str = Field(min_length=36, max_length=36)
-    credential: dict[str, Any] = Field(description="Réponse de navigator.credentials.get()")
+    frames: list[str] = Field(min_length=1, max_length=20, description=FRAMES_DESCRIPTION)
 
 
-class PasskeyRegisterRequest(BaseModel):
-    credential: dict[str, Any] = Field(description="Réponse de navigator.credentials.create()")
-    device_name: str = Field(default="Mon appareil", min_length=1, max_length=80)
+class FaceEnrollRequest(BaseModel):
+    consent: bool = Field(
+        description="Consentement explicite au traitement des données biométriques (RGPD art. 9)"
+    )
+    frames: list[str] = Field(min_length=1, max_length=30, description=FRAMES_DESCRIPTION)
 
 
-class PasskeyOut(BaseModel):
-    id: str
-    device_name: str
-    created_at: str
-    last_used_at: str | None
+class FaceStatus(BaseModel):
+    enrolled: bool
+    templates: int
+    model: str | None
+    consent_at: str | None
 
 
 class MeResponse(BaseModel):
@@ -96,7 +108,7 @@ class MeResponse(BaseModel):
     phone_masked: str
     display_name: str
     factors: list[str]
-    passkey_count: int
+    face_enrolled: bool
 
 
 class VerifyResponse(BaseModel):

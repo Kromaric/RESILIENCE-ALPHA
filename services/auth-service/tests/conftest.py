@@ -4,6 +4,7 @@ L'application est créée une seule fois (registre Prometheus global) ; la base 
 limiteur sont remis à zéro avant chaque test.
 """
 
+import base64
 import uuid
 
 import pytest
@@ -15,8 +16,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.config import Settings
+from app.face.engine import fake_frame
 from app.main import create_app
-from app.models import Base, Client, ClientApi, Passkey, Session
+from app.models import Base, Client, ClientApi, ClientFaceTemplate, Session
 from app.ratelimit import SlidingWindowLimiter
 
 PASSWORD = "demo-password"
@@ -29,7 +31,10 @@ def private_key():
 
 @pytest.fixture(scope="session")
 def settings(tmp_path_factory, private_key):
-    key_file = tmp_path_factory.mktemp("secrets") / "jwt_private_key.pem"
+    secrets_dir = tmp_path_factory.mktemp("secrets")
+    face_key = secrets_dir / "face_embedding_key"
+    face_key.write_text("11" * 32)
+    key_file = secrets_dir / "jwt_private_key.pem"
     key_file.write_bytes(
         private_key.private_bytes(
             serialization.Encoding.PEM,
@@ -37,7 +42,12 @@ def settings(tmp_path_factory, private_key):
             serialization.NoEncryption(),
         )
     )
-    return Settings(database_url="sqlite+aiosqlite://", jwt_private_key_file=key_file)
+    return Settings(
+        database_url="sqlite+aiosqlite://",
+        jwt_private_key_file=key_file,
+        face_engine="fake",
+        face_key_file=face_key,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -57,7 +67,7 @@ async def _create_schema(engine):
 
 async def _reset(engine):
     async with engine.begin() as conn:
-        for model in (Session, Passkey, ClientApi, Client):
+        for model in (Session, ClientFaceTemplate, ClientApi, Client):
             await conn.execute(delete(model))
         await conn.execute(
             ClientApi.__table__.insert().values(
@@ -153,7 +163,7 @@ def login(client):
 
 @pytest.fixture
 def token(login):
-    """Jeton d'une session ouverte au mot de passe seul (compte sans passkey)."""
+    """Jeton d'une session ouverte au mot de passe seul (compte sans visage enregistré)."""
 
     def _token(**kwargs):
         response = login(**kwargs)
@@ -167,21 +177,53 @@ def bearer(access_token):
     return {"Authorization": f"Bearer {access_token}"}
 
 
+def encode(frames):
+    return [base64.b64encode(frame).decode() for frame in frames]
+
+
+def enroll_frames(identity, count=16):
+    """Images simulées d'enrôlement : la tête balaie de −30° à +30°."""
+    return encode(fake_frame(identity, yaw=-30 + 60 * i / (count - 1), n=i) for i in range(count))
+
+
+def login_frames(identity, direction, count=8, left_is_positive=True):
+    """Images simulées de connexion : la tête tourne dans le sens demandé (0° → 20°)."""
+    sign = 1 if (direction == "left") == left_is_positive else -1
+    return encode(
+        fake_frame(identity, yaw=sign * 20 * i / (count - 1), n=100 + i) for i in range(count)
+    )
+
+
 @pytest.fixture
 def enroll(client, token):
-    """Enregistre une passkey (authentificateur simulé) sur le compte et la retourne."""
-    from soft_authenticator import SoftAuthenticator
+    """Enrôle un visage simulé (identité = email par défaut) sur un compte sans visage."""
 
-    def _enroll(authenticator=None, **login_kwargs):
-        authenticator = authenticator or SoftAuthenticator()
+    def _enroll(identity="camille", **login_kwargs):
         headers = bearer(token(**login_kwargs))
-        options = client.post("/passkeys/register/options", headers=headers).json()
         response = client.post(
-            "/passkeys/register",
-            json={"credential": authenticator.register(options), "device_name": "iPhone de test"},
+            "/face/enroll",
+            json={"consent": True, "frames": enroll_frames(identity)},
             headers=headers,
         )
         assert response.status_code == 201, response.text
-        return authenticator
+        return identity
 
     return _enroll
+
+
+@pytest.fixture
+def face_login(client, login):
+    """Connexion complète : mot de passe, puis visage simulé."""
+
+    def _face_login(identity="camille", email="camille@orbe.test", **frame_kwargs):
+        step1 = login(email=email).json()
+        assert step1["mfa_required"] is True, step1
+        direction = step1["face_challenge"]["direction"]
+        frames = frame_kwargs.pop("frames", None) or login_frames(
+            identity, direction, **frame_kwargs
+        )
+        return step1, client.post(
+            "/login/face", json={"session_id": step1["session_id"], "frames": frames}
+        )
+
+    return _face_login

@@ -193,7 +193,7 @@ def db(client, app):
     return Db()
 
 
-def _open_session(db, client_row, factors="pwd,passkey", client_api="orbe-web", status="active"):
+def _open_session(db, client_row, factors="pwd,face", client_api="orbe-web", status="active"):
     return db.add(
         Session(
             id=str(uuid.uuid4()),
@@ -323,14 +323,14 @@ def add_client(db, fund):
 @pytest.fixture
 def auth(private_key, db):
     """En-têtes d'un client authentifié : session ouverte en base + JWT signé comme le ferait
-    auth-service. Par défaut, session confirmée par passkey."""
+    auth-service. Par défaut, session confirmée par le visage."""
 
     def _auth(
         client_row,
         *,
         key=None,
         ttl=900,
-        factors=("pwd", "passkey"),
+        factors=("pwd", "face"),
         client_api="orbe-web",
         client_type="application",
         session=None,

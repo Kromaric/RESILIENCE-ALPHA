@@ -18,7 +18,7 @@ def test_login_returns_rs256_jwt(add_client, login, private_key):
     assert response.status_code == 200
     body = response.json()
     assert body["mfa_required"] is False
-    assert body["passkey_enrollment_required"] is True
+    assert body["face_enrollment_required"] is True
     token = body["token"]
     assert token["token_type"] == "bearer"
     assert token["expires_in"] == 900

@@ -33,7 +33,7 @@ router = APIRouter()
 # Réponses d'erreur documentées dans Swagger ; corps commun {"detail": {"code", "message"}}
 _ERR = {"model": ErrorOut}
 READ = {401: {**_ERR, "description": "Jeton absent, invalide, expiré ou session révoquée"}}
-STRONG = {**READ, 403: {**_ERR, "description": "Session non confirmée par passkey"}}
+STRONG = {**READ, 403: {**_ERR, "description": "Session non confirmée par reconnaissance faciale"}}
 READ404 = {**READ, 404: {**_ERR, "description": "Introuvable pour ce client"}}
 MONEY = {
     **STRONG,
