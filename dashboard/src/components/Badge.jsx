@@ -3,6 +3,7 @@ const tones = {
   danger: 'bg-danger/15 text-danger border-danger/30',
   warn: 'bg-warn/15 text-warn border-warn/30',
   accent: 'bg-accent/15 text-accent border-accent/30',
+  unknown: 'bg-line/40 text-muted border-line',
 }
 
 export default function Badge({ tone = 'ok', icon: Icon, children }) {

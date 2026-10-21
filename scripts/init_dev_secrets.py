@@ -43,6 +43,10 @@ def main() -> None:
     for name in PASSWORDS:
         write_once(name, secrets.token_hex(24).encode())
     write_once("probe_api_key", f"orbe_sk_probe_{secrets.token_hex(16)}".encode())
+    # Clé exigée par l'assistant opérateur (POST /ask, en-tête X-API-Key)
+    write_once("rag_api_key", f"orbe_sk_rag_{secrets.token_hex(16)}".encode())
+    # Jeton du proxy de la VM Ollama : recopier sa valeur dans OLLAMA_PROXY_TOKEN (infra/ollama/.env)
+    write_once("ollama_token", secrets.token_hex(32).encode())
     # Clé AES-256 qui chiffre les gabarits de visage (perdue = visages à réenregistrer)
     write_once("face_embedding_key", secrets.token_hex(32).encode())
 

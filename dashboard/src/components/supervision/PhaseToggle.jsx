@@ -1,4 +1,5 @@
 const options = [
+  ['live', 'Temps réel'],
   ['avant', 'Avant'],
   ['pendant', 'Pendant'],
   ['apres', 'Après'],

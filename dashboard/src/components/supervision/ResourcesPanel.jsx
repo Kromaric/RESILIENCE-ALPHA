@@ -10,7 +10,7 @@ export default function ResourcesPanel({ items }) {
           <div className="h-1.5 rounded-full bg-line">
             <div
               className={`h-full rounded-full transition-all duration-500 ${percent > 80 ? 'bg-danger' : 'bg-accent'}`}
-              style={{ width: `${percent}%` }}
+              style={{ width: `${percent ?? 0}%` }}
             />
           </div>
         </div>

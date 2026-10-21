@@ -1,17 +1,13 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Activity, FileText, MessageSquare, ArrowUpRight } from 'lucide-react'
+import { Activity, FileText, MessageSquare, ArrowUpRight, LogOut } from 'lucide-react'
 import { conversations } from '../data/assistant'
+import { useAuth } from '../auth/AuthContext'
+import { useApi } from '../api/useApi'
 
 const espace = [
   { to: '/', label: 'Supervision', icon: Activity },
   { to: '/docs', label: 'Documentation', icon: FileText },
   { to: '/assistant', label: 'Assistant RAG', icon: MessageSquare },
-]
-
-const outils = [
-  { label: 'Grafana', href: 'http://localhost:3000' },
-  { label: 'Prometheus', href: 'http://localhost:9090' },
-  { label: 'Loki — journaux', href: 'http://localhost:3100' },
 ]
 
 function SectionLabel({ children }) {
@@ -25,6 +21,9 @@ function SectionLabel({ children }) {
 export default function Sidebar() {
   const { pathname } = useLocation()
   const onAssistant = pathname === '/assistant'
+  const { operator, logout } = useAuth()
+  // Liens des outils (Grafana, Prometheus…) : adresses vues par le navigateur, fournies par bo-api
+  const outils = useApi('/bo/grafana').data?.tools ?? []
 
   return (
     <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-line bg-bg p-4 md:sticky md:top-0 md:h-screen">
@@ -39,7 +38,7 @@ export default function Sidebar() {
           <NavLink
             key={to}
             to={to}
-            end
+            end={to === '/'}
             className={({ isActive }) =>
               `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition ${
                 isActive ? 'bg-accent/15 text-accent' : 'text-gray-300 hover:bg-surface'
@@ -71,7 +70,7 @@ export default function Sidebar() {
         <>
           <SectionLabel>Outils</SectionLabel>
           <div className="flex flex-col gap-1">
-            {outils.map(({ label, href }) => (
+            {outils.map(({ title: label, url: href }) => (
               <a
                 key={label}
                 href={href}
@@ -87,7 +86,22 @@ export default function Sidebar() {
         </>
       )}
 
-      <div className="mt-auto rounded-md border border-line p-3 text-xs">
+      <div className="mt-auto flex items-center justify-between gap-2 px-1 pb-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs text-gray-200">{operator.display_name}</p>
+          <p className="text-[11px] text-muted">{operator.role}</p>
+        </div>
+        <button
+          onClick={logout}
+          title="Se déconnecter"
+          aria-label="Se déconnecter"
+          className="rounded-md p-1.5 text-muted hover:bg-surface hover:text-gray-200"
+        >
+          <LogOut size={14} />
+        </button>
+      </div>
+
+      <div className="rounded-md border border-line p-3 text-xs">
         <p className="text-muted">Environnement de démo</p>
         <p className="mt-1 font-mono text-gray-200">PC Hôte · 192.168.137.1</p>
         <p className="mt-1 text-muted">Données fictives uniquement</p>

@@ -1,3 +1,7 @@
+# Assistant opérateur (assistant-rag ; le modèle tourne sur la VM Ollama, infra/ollama/) : inclus ici.
+include:
+  - docker-compose.rag.yml
+
 services:
   prometheus:
     image: prom/prometheus:latest

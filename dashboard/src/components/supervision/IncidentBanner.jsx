@@ -1,12 +1,14 @@
-import { CheckCircle2, AlertTriangle } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, HelpCircle } from 'lucide-react'
 
 const styles = {
   ok: 'border-ok/40 bg-ok/10 text-ok',
   danger: 'border-danger/40 bg-danger/10 text-danger',
+  warn: 'border-warn/40 bg-warn/10 text-warn',
+  unknown: 'border-line bg-surface text-muted',
 }
 
 export default function IncidentBanner({ tone, text, meta }) {
-  const Icon = tone === 'ok' ? CheckCircle2 : AlertTriangle
+  const Icon = { ok: CheckCircle2, unknown: HelpCircle }[tone] ?? AlertTriangle
   return (
     <div className={`mt-6 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 ${styles[tone]}`}>
       <p className="flex items-center gap-2 text-sm text-gray-100">
