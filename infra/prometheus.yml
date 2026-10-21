@@ -14,8 +14,8 @@ scrape_configs:
   # Services métier (métriques HTTP, pool de connexions, paiements, connexions)
   - job_name: 'auth-service'
     static_configs:
-      - targets: ['auth-service:8001']
+      - targets: ['oorbe-auth-service:8001']
 
   - job_name: 'payment-service'
     static_configs:
-      - targets: ['payment-service:8002']
+      - targets: ['oorbe-payment-service:8002']
