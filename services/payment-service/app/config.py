@@ -1,7 +1,10 @@
 from pathlib import Path
 
+from pydantic import PrivateAttr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
+
+from app.vault import SecretStore
 
 
 class Settings(BaseSettings):
@@ -54,13 +57,42 @@ class Settings(BaseSettings):
     reconcile_after_seconds: int = 30
     reconcile_interval_seconds: float = 15.0
 
+    # Secrets : Vault KV v2 si PAYMENT_VAULT_KV_PATH est renseigné, sinon fichiers /run/secrets
+    # (repli aussi pour une clé absente de Vault). Voir app/vault.py.
+    vault_kv_path: str | None = None  # ex. secret/data/oorbe/config
+    vault_role_id_file: Path = Path("/run/secrets/vault_role_id")  # AppRole (prioritaire)
+    vault_secret_id_file: Path = Path("/run/secrets/vault_secret_id")
+    vault_approle_mount: str = "approle"
+    db_password_key: str = "payment_db_password"  # noqa: S105 — nom de la clé dans Vault, pas un secret
+    vault_addr: str = "http://vault:8200"
+    vault_token_file: Path = Path("/run/secrets/vault_token")
+
+    _secrets: SecretStore | None = PrivateAttr(default=None)
+
+    def load_secrets(self, transport=None) -> None:
+        """Lit Vault une fois (sans effet si vault_kv_path est vide)."""
+        self._secrets = SecretStore.load(
+            addr=self.vault_addr,
+            kv_path=self.vault_kv_path,
+            token_file=self.vault_token_file,
+            role_id_file=self.vault_role_id_file,
+            secret_id_file=self.vault_secret_id_file,
+            approle_mount=self.vault_approle_mount,
+            transport=transport,
+        )
+
+    def secret(self, key: str, file: Path) -> str:
+        if self._secrets is None:
+            self.load_secrets()
+        return self._secrets.get(key, file)
+
     def sqlalchemy_url(self) -> str | URL:
         if self.database_url:
             return self.database_url
         return URL.create(
             "mysql+aiomysql",
             username=self.db_user,
-            password=self.db_password_file.read_text(encoding="utf-8").strip(),
+            password=self.secret(self.db_password_key, self.db_password_file),
             host=self.db_host,
             port=self.db_port,
             database=self.db_name,

@@ -29,6 +29,7 @@ AUTH_SVC_PASSWORD="$(secret MARIADB_AUTH_SVC_PASSWORD)" || exit 1
 PAYMENT_SVC_PASSWORD="$(secret MARIADB_PAYMENT_SVC_PASSWORD)" || exit 1
 REMEDIATION_RO_PASSWORD="$(secret MARIADB_REMEDIATION_RO_PASSWORD)" || exit 1
 EXPORTER_PASSWORD="$(secret MARIADB_EXPORTER_PASSWORD)" || exit 1
+BO_RO_PASSWORD="$(secret MARIADB_BO_RO_PASSWORD)" || exit 1
 
 run_sql <<-EOSQL
 	CREATE USER IF NOT EXISTS 'auth_svc'@'%' IDENTIFIED BY '${AUTH_SVC_PASSWORD}';
@@ -39,6 +40,10 @@ run_sql <<-EOSQL
 	GRANT SELECT ON orbe.client_apis TO 'auth_svc'@'%';
 	GRANT SELECT, INSERT, DELETE ON orbe.client_face_templates TO 'auth_svc'@'%';
 	GRANT SELECT, INSERT, UPDATE ON orbe.sessions TO 'auth_svc'@'%';
+	-- opérateurs du back-office : lecture et blocage seulement, jamais de création ni de changement de rôle
+	GRANT SELECT ON orbe.operators TO 'auth_svc'@'%';
+	GRANT UPDATE (failed_logins, locked_until, last_login_at) ON orbe.operators TO 'auth_svc'@'%';
+	GRANT SELECT, INSERT, UPDATE ON orbe.operator_sessions TO 'auth_svc'@'%';
 
 	CREATE USER IF NOT EXISTS 'payment_svc'@'%' IDENTIFIED BY '${PAYMENT_SVC_PASSWORD}';
 	GRANT SELECT ON orbe.clients TO 'payment_svc'@'%';
@@ -56,6 +61,17 @@ run_sql <<-EOSQL
 	GRANT SELECT ON orbe.transactions TO 'remediation_ro'@'%';
 	GRANT SELECT ON orbe.ledger_entries TO 'remediation_ro'@'%';
 	GRANT SELECT ON orbe.ledger_accounts TO 'remediation_ro'@'%';
+
+	-- bo-api (back-office) : lecture seule, colonnes utiles uniquement. Clients via la vue
+	-- masquée bo_clients ; jamais de hachage, de clé d'idempotence ni d'empreinte de requête.
+	CREATE USER IF NOT EXISTS 'bo_ro'@'%' IDENTIFIED BY '${BO_RO_PASSWORD}' WITH MAX_USER_CONNECTIONS 5;
+	GRANT SELECT ON orbe.bo_clients TO 'bo_ro'@'%';
+	GRANT SELECT (id, reference, type, payer_id, recipient_id, parent_id, payout_account_id, amount_cents, currency, description, card_brand, card_last4, status, decline_reason, created_at, updated_at) ON orbe.transactions TO 'bo_ro'@'%';
+	GRANT SELECT ON orbe.ledger_entries TO 'bo_ro'@'%';
+	GRANT SELECT ON orbe.ledger_accounts TO 'bo_ro'@'%';
+	GRANT SELECT (id, reference, requester_id, payer_id, transaction_id, amount_cents, currency, description, status, failure_reason, created_at, expires_at, updated_at) ON orbe.payment_requests TO 'bo_ro'@'%';
+	GRANT SELECT (id, client_id, label, iban_last4, is_default, created_at) ON orbe.payout_accounts TO 'bo_ro'@'%';
+	GRANT SELECT (id, client_id, status, opened_at, expires_at) ON orbe.sessions TO 'bo_ro'@'%';
 
 	CREATE USER IF NOT EXISTS 'exporter'@'%' IDENTIFIED BY '${EXPORTER_PASSWORD}' WITH MAX_USER_CONNECTIONS 3;
 	GRANT PROCESS, REPLICATION CLIENT, SLAVE MONITOR ON *.* TO 'exporter'@'%';

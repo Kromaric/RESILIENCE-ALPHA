@@ -96,6 +96,24 @@ class TokenService:
         }
         return jwt.encode(payload, self._private_key, algorithm=self.algorithm)
 
+    def issue_operator(self, operator_id: str, email: str, role: str, session_id: str) -> str:
+        """JWT du back-office : `role` (viewer | operator), mot de passe seul."""
+        now = int(time.time())
+        payload = {
+            "sub": operator_id,
+            "email": email,
+            "role": role,
+            "typ": "operator",
+            "iss": self._issuer,
+            "aud": self._audience,
+            "iat": now,
+            "nbf": now,
+            "exp": now + self.ttl,
+            "jti": session_id,
+            "amr": ["pwd"],
+        }
+        return jwt.encode(payload, self._private_key, algorithm=self.algorithm)
+
     def decode(self, token: str) -> dict[str, Any]:
         return jwt.decode(
             token,

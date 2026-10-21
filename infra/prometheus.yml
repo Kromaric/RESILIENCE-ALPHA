@@ -19,6 +19,7 @@ scrape_configs:
   - job_name: 'payment-service'
     static_configs:
       - targets: ['oorbe-payment-service:8002']
-  - job_name: 'docker-containers'
+
+  - job_name: 'bo-api'
     static_configs:
-      - targets: ['cadvisor:8080']
+      - targets: ['oorbe-bo-api:8006']

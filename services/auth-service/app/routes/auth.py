@@ -75,18 +75,21 @@ def rate_limit(request: Request, ip: str) -> None:
         )
 
 
-async def register_failure(session: AsyncSession, client_id: str, request: Request) -> None:
+async def register_failure(
+    session: AsyncSession, account_id: str, request: Request, model: type = Client
+) -> None:
+    """Compte un échec ; au seuil, bloque le compte (client ou opérateur)."""
     settings = request.app.state.settings
-    reaches_threshold = Client.failed_logins + 1 >= settings.lockout_threshold
+    reaches_threshold = model.failed_logins + 1 >= settings.lockout_threshold
     lock_until = utcnow() + timedelta(minutes=settings.lockout_minutes)
     # Une seule requête atomique. locked_until est assigné avant failed_logins :
     # MariaDB évalue les affectations de gauche à droite.
     await session.execute(
-        update(Client)
-        .where(Client.id == client_id)
+        update(model)
+        .where(model.id == account_id)
         .ordered_values(
-            (Client.locked_until, case((reaches_threshold, lock_until), else_=Client.locked_until)),
-            (Client.failed_logins, case((reaches_threshold, 0), else_=Client.failed_logins + 1)),
+            (model.locked_until, case((reaches_threshold, lock_until), else_=model.locked_until)),
+            (model.failed_logins, case((reaches_threshold, 0), else_=model.failed_logins + 1)),
         )
     )
     await session.commit()

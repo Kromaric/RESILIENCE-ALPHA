@@ -63,12 +63,18 @@ services:
     image: grafana/grafana-oss:latest
     container_name: grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"   # PC Hôte uniquement (lecture anonyme activée ci-dessous)
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana-provisioning:/etc/grafana/provisioning
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
+      # Panneaux intégrés dans le dashboard Orbe : intégration autorisée, lecture anonyme
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_USERS_ALLOW_SIGN_UP=false
+    secrets: [grafana_admin_password]
     restart: unless-stopped
 
   safeline-waf:
@@ -106,7 +112,11 @@ services:
       AUTH_JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
       AUTH_FACE_ENGINE: insightface   # modèle embarqué dans l'image (buffalo_s)
       AUTH_FACE_KEY_FILE: /run/secrets/face_embedding_key
-    secrets: [auth_db_password, jwt_private_key, face_embedding_key]
+      # Secrets lus dans Vault (repli : fichiers /run/secrets), voir app/vault.py
+      AUTH_VAULT_ADDR: http://vault:8200
+      AUTH_VAULT_KV_PATH: secret/data/oorbe/config
+      AUTH_VAULT_TOKEN_FILE: /run/secrets/oorbe_vault_token
+    secrets: [auth_db_password, jwt_private_key, face_embedding_key, oorbe_vault_token]
     depends_on:
       mariadb: { condition: service_healthy }
     expose:
@@ -134,7 +144,11 @@ services:
       PAYMENT_DB_HOST: mariadb
       PAYMENT_DB_PASSWORD_FILE: /run/secrets/payment_db_password
       PAYMENT_JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public_key
-    secrets: [payment_db_password, jwt_public_key]
+      # Secrets lus dans Vault (repli : fichiers /run/secrets), voir app/vault.py
+      PAYMENT_VAULT_ADDR: http://vault:8200
+      PAYMENT_VAULT_KV_PATH: secret/data/oorbe/config
+      PAYMENT_VAULT_TOKEN_FILE: /run/secrets/oorbe_vault_token
+    secrets: [payment_db_password, jwt_public_key, oorbe_vault_token]
     depends_on:
       mariadb: { condition: service_healthy }
     expose:
@@ -145,6 +159,35 @@ services:
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
 
+
+  oorbe-bo-api:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-bo
+    container_name: oorbe-bo-api
+    environment:
+      BO_AUTH_URL: http://oorbe-auth-service:8001
+      BO_PROMETHEUS_URL: http://prometheus:9090
+      BO_LOKI_URL: http://loki:3100
+      BO_JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public_key
+      BO_DB_HOST: mariadb
+      BO_DB_PASSWORD_FILE: /run/secrets/bo_db_password
+      # Secrets lus dans Vault (repli : fichiers /run/secrets), voir app/vault.py
+      BO_VAULT_ADDR: http://vault:8200
+      BO_VAULT_KV_PATH: secret/data/oorbe/config
+      BO_VAULT_TOKEN_FILE: /run/secrets/oorbe_vault_token
+    secrets: [jwt_public_key, bo_db_password, oorbe_vault_token]
+    depends_on:
+      - oorbe-auth-service
+      - mariadb
+    expose:
+      - "8006"   # relayé par le Nginx du dashboard sous /bo, jamais publié
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    restart: unless-stopped
 
   #oorbe-dashboard:
     #build:
@@ -175,6 +218,7 @@ services:
       MARIADB_PAYMENT_SVC_PASSWORD_FILE: /run/secrets/payment_db_password
       MARIADB_REMEDIATION_RO_PASSWORD_FILE: /run/secrets/remediation_db_password
       MARIADB_EXPORTER_PASSWORD_FILE: /run/secrets/exporter_db_password
+      MARIADB_BO_RO_PASSWORD_FILE: /run/secrets/bo_db_password
       ORBE_PROBE_API_KEY_FILE: /run/secrets/probe_api_key
     secrets:
       - db_root_password
@@ -182,6 +226,7 @@ services:
       - payment_db_password
       - remediation_db_password
       - exporter_db_password
+      - bo_db_password
       - probe_api_key
     ports:
       - "3306:3306"
@@ -223,6 +268,10 @@ secrets:
   payment_db_password:     { file: ../secrets/payment_db_password }
   remediation_db_password: { file: ../secrets/remediation_db_password }
   exporter_db_password:    { file: ../secrets/exporter_db_password }
+  bo_db_password:          { file: ../secrets/bo_db_password }
+  grafana_admin_password:  { file: ../secrets/grafana_admin_password }
+  # Jeton Vault des services : politique en lecture seule sur secret/data/oorbe/config
+  oorbe_vault_token:       { file: ../secrets/oorbe_vault_token }
   probe_api_key:           { file: ../secrets/probe_api_key }
   jwt_private_key:         { file: ../secrets/jwt_private_key.pem }
   jwt_public_key:          { file: ../secrets/jwt_public_key.pem }

@@ -18,7 +18,7 @@ from app.face.cipher import LocalCipher, VaultTransitCipher
 from app.face.engine import FakeFaceEngine, InsightFaceEngine
 from app.logging_setup import configure_logging, log_event, request_id_var
 from app.ratelimit import SlidingWindowLimiter
-from app.routes import auth, face, health
+from app.routes import auth, face, health, operators
 from app.routes.auth import client_ip
 from app.security import PasswordVerifier, TokenService
 
@@ -66,6 +66,10 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
                 "description": "Enrôlement et effacement du visage (consentement, RGPD art. 9)",
             },
             {"name": "Partenaires", "description": "Clés d'API des partenaires"},
+            {
+                "name": "Back-office",
+                "description": "Connexion des opérateurs du dashboard (mot de passe seul)",
+            },
         ],
         lifespan=lifespan,
         docs_url="/docs" if settings.enable_docs else None,
@@ -81,6 +85,12 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
         issuer=settings.jwt_issuer,
         audience=settings.jwt_audience,
         ttl=settings.jwt_ttl_seconds,
+    )
+    app.state.operator_tokens = TokenService.from_pem_file(
+        settings.jwt_private_key_file,
+        issuer=settings.jwt_issuer,
+        audience=settings.bo_jwt_audience,
+        ttl=settings.bo_jwt_ttl_seconds,
     )
     app.state.passwords = PasswordVerifier(settings.hash_concurrency)
     app.state.login_limiter = SlidingWindowLimiter(settings.login_rate_per_ip)
@@ -100,7 +110,9 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
             settings.vault_token_file.read_text(encoding="utf-8").strip(),
         )
     else:
-        app.state.face_cipher = LocalCipher.from_file(settings.face_key_file)
+        app.state.face_cipher = LocalCipher.from_hex(
+            settings.secret(settings.face_key_name, settings.face_key_file)
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -147,6 +159,7 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
 
     app.include_router(auth.router)
     app.include_router(face.router)
+    app.include_router(operators.router)
     app.include_router(health.router)
 
     Instrumentator(excluded_handlers=["/metrics", "/health/.*"]).instrument(app).expose(
