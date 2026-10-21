@@ -58,7 +58,7 @@ def main() -> None:
     )
     parser.add_argument("email")
     parser.add_argument("--name", help="nom affiché (création)")
-    parser.add_argument("--role", choices=["viewer", "operator"], default="viewer")
+    parser.add_argument("--role", choices=["viewer", "operator", "admin"], default="viewer")
     parser.add_argument("--compose", default="docker-compose.dev.yml")
     parser.add_argument("--service", default="mariadb")
     parser.add_argument("--disable", action="store_true")

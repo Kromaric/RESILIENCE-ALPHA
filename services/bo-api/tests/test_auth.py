@@ -4,31 +4,71 @@ from fastapi import Depends
 
 from app.security import Operator, require_role
 
+SESSION = "00000000-0000-0000-0000-000000000001"
 
-def test_login_is_relayed_to_auth_service_with_the_operator_ip(client, auth):
-    response = client.post(
-        "/bo/auth/login",
-        json={"email": "ops@orbe.test", "password": "demo-password"},
-        headers={"X-Real-IP": "192.168.137.20"},
+
+def test_login_steps_are_relayed_in_order_with_the_operator_ip(client, auth):
+    ip = {"X-Real-IP": "192.168.137.20"}
+
+    step1 = client.post("/bo/auth/identify", json={"email": "ops@orbe.test"}, headers=ip)
+    step2 = client.post(
+        "/bo/auth/face", json={"session_id": SESSION, "frames": ["aW1n"] * 12}, headers=ip
+    )
+    step3 = client.post(
+        "/bo/auth/password", json={"session_id": SESSION, "password": "demo-password"}, headers=ip
     )
 
-    assert response.status_code == 200, response.text
-    assert response.json()["role"] == "operator"
-    assert auth.last_login_headers["x-real-ip"] == "192.168.137.20"
+    assert step1.json()["step"] == "face" and step1.json()["face_challenge"]["frames"] == 12
+    assert step2.json()["step"] == "password"
+    assert step3.status_code == 200 and step3.json()["role"] == "operator"
+    paths = [path for _, path, _, _ in auth.calls]
+    assert paths == [
+        "/operators/login/identify",
+        "/operators/login/face",
+        "/operators/login/password",
+    ]
+    assert all(headers["x-real-ip"] == "192.168.137.20" for *_, headers in auth.calls)
 
 
-def test_login_failure_is_passed_through(client):
-    response = client.post("/bo/auth/login", json={"email": "ops@orbe.test", "password": "mauvais"})
+def test_identification_lock_is_passed_through_with_retry_after(client, auth):
+    auth.replies["/operators/login/identify"] = (
+        429,
+        {"detail": {"code": "identification_locked", "message": "Attendez."}},
+        {"Retry-After": "27"},
+    )
+
+    response = client.post("/bo/auth/identify", json={"email": "ops@orbe.test"})
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "27"
+    assert response.json()["detail"]["code"] == "identification_locked"
+
+
+def test_wrong_password_is_passed_through(client):
+    response = client.post("/bo/auth/password", json={"session_id": SESSION, "password": "mauvais"})
 
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "invalid_credentials"
 
 
 def test_validation_errors_never_echo_the_password(client):
-    response = client.post("/bo/auth/login", json={"email": "ops@orbe.test", "password": ""})
+    response = client.post("/bo/auth/password", json={"session_id": SESSION, "password": ""})
 
     assert response.status_code == 422
     assert "input" not in response.text
+
+
+def test_bootstrap_enrollment_is_relayed_with_its_token(client, auth):
+    auth.replies["/operators/me/face"] = (201, {"enrolled": True, "templates": 5}, {})
+
+    response = client.post(
+        "/bo/auth/enroll-face",
+        json={"consent": True, "frames": ["aW1n"] * 16},
+        headers=bearer("jeton-d-enrolement"),
+    )
+
+    assert response.status_code == 201
+    assert auth.calls[-1][3]["authorization"] == "Bearer jeton-d-enrolement"
 
 
 def test_me_returns_the_operator(client, auth):
@@ -90,7 +130,7 @@ def test_auth_service_down_gives_503(client, auth):
     auth.down = True
 
     response = client.get("/bo/auth/me", headers=bearer(token))
-    login = client.post("/bo/auth/login", json={"email": "ops@orbe.test", "password": "x"})
+    login = client.post("/bo/auth/identify", json={"email": "ops@orbe.test"})
 
     assert (response.status_code, login.status_code) == (503, 503)
     assert response.json()["detail"]["code"] == "auth_unavailable"

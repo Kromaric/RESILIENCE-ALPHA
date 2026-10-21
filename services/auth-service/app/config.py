@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     # opérateur ne paie pas)
     bo_jwt_audience: str = "orbe-bo"
     bo_jwt_ttl_seconds: int = 3600
+    # Connexion au back-office : identifiant → visage → mot de passe (consigne du sujet)
+    bo_pending_seconds: int = 120  # délai pour passer d'une étape à la suivante
+    bo_enrollment_seconds: int = 600  # première connexion : temps pour enregistrer son visage
+    bo_face_failure_seconds: int = 30  # visage non reconnu : rouge fixe, identifiant bloqué
+    bo_success_led_seconds: int = 30  # mot de passe correct : vert fixe
+    bo_password_failure_blinks: int = 10  # mot de passe faux : rouge clignotant
+    led_blink_period_ms: int = 500
+    # Clé de l'ESP8266 (GET /devices/led) : Vault, sinon fichier de secret ; absente = route fermée
+    led_device_key_file: Path = Path("/run/secrets/led_device_key")
+    led_device_key_name: str = "led_device_key"
 
     # Second facteur : reconnaissance faciale (notre modèle), CADRAGE §4.2
     face_engine: str = "insightface"  # insightface | fake (tests et développement sans caméra)

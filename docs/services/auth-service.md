@@ -6,19 +6,20 @@ Port interne **8001**, exposé via le WAF sous `/api/auth/*`. Python 3.12 / Fast
 
 auth-service gère l'inscription, la connexion à **deux facteurs** (mot de passe + reconnaissance faciale),
 les sessions révocables et l'émission des jetons JWT. Il vérifie aussi les clés d'API des applications
-clientes (sonde, partenaires). Il servira aussi d'authentification au back-office.
+clientes (sonde, partenaires). Il authentifie aussi les opérateurs du back-office (identifiant → visage →
+mot de passe) et pilote la LED de l'ESP8266 : voir [back-office-connexion.md](back-office-connexion.md).
 
 ## auth-service — parcours de connexion
 
-1. `POST /login` (email + mot de passe, en-tête `X-Client-Id`) → `200` avec `mfa_required: true`, un `session_id` et un défi `face_challenge` (« tournez la tête à gauche » ou « à droite », 8 images, 250 ms d'intervalle). La session est `en_attente_2fa` pendant 2 minutes.
-2. La caméra du navigateur capture 8 images pendant que le client tourne la tête.
+1. `POST /login` (email + mot de passe, en-tête `X-Client-Id`) → `200` avec `mfa_required: true`, un `session_id` et un défi `face_challenge` (« tournez la tête à gauche » ou « à droite », 12 images, 300 ms d'intervalle). La session est `en_attente_2fa` pendant 2 minutes.
+2. Après un compte à rebours, la caméra du navigateur capture 12 images pendant que le client tourne la tête.
 3. `POST /login/face` → `200` avec `access_token` (JWT RS256, 15 minutes), session `active`, facteurs `["pwd","face"]`.
 
 ## auth-service — reconnaissance faciale et détection du vivant
 
 - Modèle **InsightFace `buffalo_s`** (détection SCRFD + reconnaissance ArcFace), sur CPU, embarqué dans l'image. Environ 300 Mo de RAM, ~100 ms par image.
 - Décision : similarité cosinus ≥ **0,40** avec un gabarit du client sur au moins **3 images**.
-- Détection du vivant : la rotation de la tête (lacet) doit dépasser **8°** dans le sens demandé. Une photo ou un écran figé échoue (`liveness_failed`).
+- Détection du vivant : la tête doit tourner d'au moins **8°** dans le sens demandé par rapport à sa position de départ (amplitude atteinte sur au moins deux images ; tourner puis revenir de face est accepté). Une photo, un écran figé ou une rotation du mauvais côté échoue (`liveness_failed`).
 - Limite assumée : une vidéo rejouée qui tourne du bon côté passe une fois sur deux ; pas d'anti-spoofing par profondeur.
 - Aucune image n'est conservée ni journalisée. Seuls 3 à 5 **gabarits chiffrés AES-256-GCM** sont stockés par client.
 

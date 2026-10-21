@@ -9,15 +9,18 @@ from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session, utcnow
-from app.face.cipher import CipherError
 from app.face.decision import (
     decide,
     main_face,
     random_direction,
-    same_person,
-    select_for_enrollment,
 )
-from app.face.service import analyze_frames, count_templates, decode_frames, load_templates
+from app.face.service import (
+    analyze_frames,
+    count_templates,
+    decode_frames,
+    encrypted_enrollment,
+    load_templates,
+)
 from app.logging_setup import log_event
 from app.metrics import FACE_ENROLLMENTS, SECOND_FACTOR
 from app.models import Client, ClientApi, ClientFaceTemplate, Session
@@ -249,7 +252,6 @@ async def enroll(
     gabarits (embeddings) sont conservés, chiffrés ; aucune image n'est stockée."""
     claims, session = current
     state = request.app.state
-    settings = state.settings
     await _require_strong_session(db, claims, session)
     if not body.consent:
         raise HTTPException(
@@ -260,40 +262,7 @@ async def enroll(
             ),
         )
 
-    frames = decode_frames(
-        body.frames, max_frames=settings.enroll_max_frames, max_bytes=settings.frame_max_bytes
-    )
-    selected = select_for_enrollment(
-        await analyze_frames(state.face_engine, frames),
-        count=settings.enroll_templates,
-        min_quality=settings.enroll_min_quality,
-    )
-    if len(selected) < settings.enroll_min_templates:
-        FACE_ENROLLMENTS.labels(result="not_enough_faces").inc()
-        raise HTTPException(
-            422,
-            detail=error(
-                "enrollment_failed",
-                "Visage non détecté sur assez d'images : regardez la caméra, seul, bien éclairé, "
-                "et tournez lentement la tête.",
-            ),
-        )
-    if not same_person(selected, settings.face_threshold):
-        FACE_ENROLLMENTS.labels(result="several_people").inc()
-        raise HTTPException(
-            422,
-            detail=error("enrollment_failed", "Les images montrent plusieurs personnes."),
-        )
-
-    try:
-        encrypted = [
-            (await state.face_cipher.encrypt(face.embedding, session.client_id), face)
-            for face in selected
-        ]
-    except CipherError:
-        raise HTTPException(
-            503, detail=error("face_unavailable", "Reconnaissance faciale indisponible.")
-        ) from None
+    encrypted = await encrypted_enrollment(state, body.frames, session.client_id)
 
     now = utcnow()
     await db.execute(

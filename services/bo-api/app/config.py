@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     grafana_dashboard_uid: str = "orbe-supervision"
     prometheus_public_url: str = "http://localhost:9090"
     upstream_timeout_seconds: float = 3.0
+    face_timeout_seconds: float = 30.0  # connexion : la reconnaissance faciale prend du temps
     assistant_timeout_seconds: float = 60.0  # un LLM local peut mettre plusieurs secondes
     assistant_rate_per_operator: int = 10  # questions par minute et par opérateur
 

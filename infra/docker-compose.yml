@@ -106,7 +106,7 @@ services:
       AUTH_VAULT_ADDR: http://vault:8200
       AUTH_VAULT_KV_PATH: secret/data/oorbe/config
       AUTH_VAULT_TOKEN_FILE: /run/secrets/oorbe_vault_token
-    secrets: [auth_db_password, jwt_private_key, face_embedding_key, oorbe_vault_token]
+    secrets: [auth_db_password, jwt_private_key, face_embedding_key, oorbe_vault_token, led_device_key]
     depends_on:
       mariadb: { condition: service_healthy }
     expose:
@@ -261,6 +261,7 @@ secrets:
   # Jeton Vault des services : politique en lecture seule sur secret/data/oorbe/config
   oorbe_vault_token:       { file: ../secrets/oorbe_vault_token }
   probe_api_key:           { file: ../secrets/probe_api_key }
+  led_device_key:          { file: ../secrets/led_device_key }   # ESP8266 (GET /devices/led)
   jwt_private_key:         { file: ../secrets/jwt_private_key.pem }
   jwt_public_key:          { file: ../secrets/jwt_public_key.pem }
   face_embedding_key:      { file: ../secrets/face_embedding_key }

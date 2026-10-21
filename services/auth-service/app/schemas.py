@@ -57,22 +57,6 @@ class TokenResponse(BaseModel):
     factors: list[str]
 
 
-class OperatorTokenResponse(BaseModel):
-    access_token: str
-    token_type: Literal["bearer"] = "bearer"  # noqa: S105 — type de jeton, pas un secret
-    expires_in: int
-    role: Literal["viewer", "operator"]
-
-
-class OperatorMe(BaseModel):
-    operator_id: str
-    email: str
-    display_name: str
-    role: Literal["viewer", "operator"]
-    session_id: str
-    expires_at: str
-
-
 class FaceChallenge(BaseModel):
     """Consigne du test du vivant : filmer le visage pendant que la tête tourne dans ce sens."""
 
@@ -148,3 +132,100 @@ class VerifyResponse(BaseModel):
 def error(code: str, message: str) -> dict[str, str]:
     """Corps d'erreur commun : {"detail": {"code", "message"}} — le front s'appuie sur code."""
     return {"code": code, "message": message}
+
+
+# --- Back-office : connexion des opérateurs et habilitations -----------------------------------
+
+OperatorRole = Literal["viewer", "operator", "admin"]
+
+
+class OperatorIdentifyRequest(BaseModel):
+    model_config = {"json_schema_extra": {"examples": [{"email": "ops@orbe.test"}]}}
+
+    email: str = Field(min_length=3, max_length=254)
+
+
+class OperatorLoginStep(BaseModel):
+    """Étape suivante de la connexion au back-office."""
+
+    session_id: str
+    step: Literal["face", "password"]
+    face_challenge: FaceChallenge | None = None
+    face_enrollment_required: bool = (
+        False  # aucun visage enregistré : mot de passe, puis enrôlement
+    )
+    expires_in: int
+
+
+class OperatorFaceRequest(BaseModel):
+    session_id: str = Field(min_length=36, max_length=36)
+    frames: list[str] = Field(min_length=1, max_length=20, description=FRAMES_DESCRIPTION)
+
+
+class OperatorPasswordRequest(BaseModel):
+    session_id: str = Field(min_length=36, max_length=36)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class OperatorTokenResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"  # noqa: S105 — type de jeton, pas un secret
+    expires_in: int
+    role: OperatorRole
+    # True : jeton limité à POST /operators/me/face, puis nouvelle connexion avec le visage
+    face_enrollment_required: bool = False
+
+
+class OperatorMe(BaseModel):
+    operator_id: str
+    email: str
+    display_name: str
+    role: OperatorRole
+    session_id: str
+    expires_at: str
+    factors: list[str]
+
+
+class OperatorAccount(BaseModel):
+    operator_id: str
+    email: str
+    display_name: str
+    role: OperatorRole
+    active: bool
+    locked: bool
+    face_enrolled: bool
+    face_templates: int
+    biometric_consent_at: str | None
+    last_login_at: str | None
+    created_at: str
+    active_sessions: int
+
+
+class OperatorCreate(BaseModel):
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "email": "lea.soc@orbe.test",
+                    "display_name": "Léa (SOC)",
+                    "role": "operator",
+                    "password": "un-mot-de-passe-solide",
+                }
+            ]
+        }
+    }
+
+    email: str = Field(min_length=3, max_length=254)
+    display_name: str = Field(min_length=2, max_length=80)
+    role: OperatorRole = "viewer"
+    password: str = Field(min_length=1, max_length=128, description="12 caractères minimum")
+
+
+class OperatorUpdate(BaseModel):
+    display_name: str | None = Field(default=None, min_length=2, max_length=80)
+    role: OperatorRole | None = None
+    active: bool | None = None
+
+
+class OperatorPasswordReset(BaseModel):
+    password: str = Field(min_length=1, max_length=128, description="12 caractères minimum")

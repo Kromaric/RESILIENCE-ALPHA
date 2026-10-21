@@ -17,6 +17,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import Settings
 from app.face.engine import fake_frame
+from app.face.service import operator_aad
+from app.led import LedController
 from app.main import create_app
 from app.models import (
     Base,
@@ -24,12 +26,14 @@ from app.models import (
     ClientApi,
     ClientFaceTemplate,
     Operator,
+    OperatorFaceTemplate,
     OperatorSession,
     Session,
 )
 from app.ratelimit import SlidingWindowLimiter
 
 PASSWORD = "demo-password"
+DEVICE_KEY = "cle-de-la-led-de-test"
 
 
 @pytest.fixture(scope="session")
@@ -42,6 +46,8 @@ def settings(tmp_path_factory, private_key):
     secrets_dir = tmp_path_factory.mktemp("secrets")
     face_key = secrets_dir / "face_embedding_key"
     face_key.write_text("11" * 32)
+    device_key = secrets_dir / "led_device_key"
+    device_key.write_text(DEVICE_KEY)
     key_file = secrets_dir / "jwt_private_key.pem"
     key_file.write_bytes(
         private_key.private_bytes(
@@ -55,6 +61,7 @@ def settings(tmp_path_factory, private_key):
         jwt_private_key_file=key_file,
         face_engine="fake",
         face_key_file=face_key,
+        led_device_key_file=device_key,
     )
 
 
@@ -77,6 +84,7 @@ async def _reset(engine):
     async with engine.begin() as conn:
         for model in (
             OperatorSession,
+            OperatorFaceTemplate,
             Operator,
             Session,
             ClientFaceTemplate,
@@ -106,6 +114,7 @@ def clean_state(client, app):
     client.portal.call(_reset, app.state.engine)
     app.state.login_limiter = SlidingWindowLimiter(app.state.settings.login_rate_per_ip)
     app.state.register_limiter = SlidingWindowLimiter(app.state.settings.register_rate_per_ip)
+    app.state.led = LedController(app.state.settings.led_blink_period_ms)
 
 
 @pytest.fixture
@@ -183,6 +192,35 @@ def add_operator(app, db):
         )
 
     return _add
+
+
+@pytest.fixture
+def enroll_operator(app, client, db):
+    """Gabarits faciaux d'un opérateur (moteur simulé), sans passer par l'API."""
+
+    def _enroll(operator_id, identity="ops"):
+        async def _templates():
+            from app.face.engine import identity_vector
+
+            vector = identity_vector(identity)
+            return [
+                OperatorFaceTemplate(
+                    id=str(uuid.uuid4()),
+                    operator_id=operator_id,
+                    embedding_ct=await app.state.face_cipher.encrypt(
+                        vector, operator_aad(operator_id)
+                    ),
+                    embedding_dim=len(vector),
+                    model=app.state.face_engine.model_name,
+                    quality_score=0.9,
+                )
+                for _ in range(3)
+            ]
+
+        for template in client.portal.call(_templates):
+            db.add(template)
+
+    return _enroll
 
 
 @pytest.fixture

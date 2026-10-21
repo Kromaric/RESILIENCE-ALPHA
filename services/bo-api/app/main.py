@@ -17,7 +17,7 @@ from app.db import make_engine
 from app.errors import error
 from app.logging_setup import configure_logging, log_event, request_id_var
 from app.ratelimit import SlidingWindowLimiter
-from app.routes import auth, control, data, health, supervision
+from app.routes import admin, auth, control, data, health, supervision
 from app.routes.auth import client_ip
 from app.security import OperatorSessions, TokenVerifier
 from app.upstream import ControlPlane, Loki, Prometheus
@@ -50,17 +50,23 @@ def create_app(
         description=(
             "API du back-office : alimente le dashboard de supervision (état des services, "
             "indicateurs, incidents, journaux, Grafana, assistant). **Lecture seule** : aucune "
-            "route ne modifie la plateforme.\n\n"
-            "- Connexion : `POST /bo/auth/login` (opérateur, mot de passe seul), puis "
+            "route ne modifie la plateforme, sauf la gestion des habilitations (rôle admin).\n\n"
+            "- Connexion : identifiant (`POST /bo/auth/identify`), visage par la caméra USB "
+            "(`POST /bo/auth/face`), mot de passe (`POST /bo/auth/password`), puis "
             "`Authorization: Bearer <jeton>` sur toutes les autres routes.\n"
-            "- Rôles : `viewer` (indicateurs agrégés) et `operator` (en plus : listes et fiches "
+            "- Rôles : `admin` (habilitations), `viewer` (indicateurs agrégés) et `operator` "
+            "(en plus : listes et fiches "
             "clients, opérations, demandes ; chaque consultation est journalisée).\n"
             '- Erreurs : `{"detail": {"code", "message"}}` ; un service interrogé '
             "indisponible renvoie `503 <service>_unavailable`.\n\n"
             "Voir CADRAGE §4.7."
         ),
         openapi_tags=[
-            {"name": "Connexion", "description": "Connexion des opérateurs"},
+            {
+                "name": "Connexion",
+                "description": "Identifiant → visage (caméra USB) → mot de passe ; pilote la LED",
+            },
+            {"name": "Habilitations", "description": "Comptes, rôles et visages (rôle admin)"},
             {
                 "name": "Supervision",
                 "description": "État des services, indicateurs, courbes, ressources, journaux",
@@ -158,6 +164,7 @@ def create_app(
             request_id_var.reset(token)
 
     app.include_router(auth.router)
+    app.include_router(admin.router)
     app.include_router(supervision.router)
     app.include_router(data.router)
     app.include_router(control.router)
