@@ -1,8 +1,9 @@
 import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell,
+  ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea, ReferenceLine,
 } from 'recharts'
 import { colors } from '../../theme'
+import { formatHour } from '../../api/format'
 
 const TICKS = ['10:20', '10:30', '10:40', '10:50']
 const axis = { axisLine: false, tickLine: false, tick: { fill: colors.muted, fontSize: 11 } }
@@ -60,20 +61,20 @@ export function AnomalyChart({ points, incident }) {
   )
 }
 
-export function TransactionsChart({ points, incident }) {
+export function TransactionsChart({ points }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={points} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
         <CartesianGrid stroke={colors.line} vertical={false} />
-        <XAxis dataKey="time" ticks={TICKS} {...axis} />
-        <YAxis {...axis} />
-        <Tooltip {...tooltipStyle} cursor={{ fill: colors.line }} formatter={(v) => [v, 'Transactions']} />
-        {IncidentArea({ incident })}
-        <Bar dataKey="tx" isAnimationActive={false}>
-          {points.map((p) => (
-            <Cell key={p.time} fill={p.incident ? colors.danger : colors.accent} />
-          ))}
-        </Bar>
+        <XAxis dataKey="time" tickFormatter={formatHour} interval={5} {...axis} />
+        <YAxis allowDecimals={false} {...axis} />
+        <Tooltip
+          {...tooltipStyle}
+          cursor={{ fill: colors.line }}
+          labelFormatter={formatHour}
+          formatter={(v) => [v, 'Transactions']}
+        />
+        <Bar dataKey="value" fill={colors.accent} isAnimationActive={false} />
       </BarChart>
     </ResponsiveContainer>
   )

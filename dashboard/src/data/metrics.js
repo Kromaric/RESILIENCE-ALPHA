@@ -9,7 +9,6 @@ const noise = (i, amp) => Math.sin(i * 1.7) * amp + Math.cos(i * 0.9) * (amp / 2
 const spikes = {
   latency: { 21: 900, 22: 2300, 23: 1800, 24: 420 },
   anomaly: { 21: 0.62, 22: 0.94, 23: 0.86, 24: 0.3 },
-  tx: { 21: 70, 22: 25, 23: 15, 24: 32 },
 }
 
 export function getSeries(phase) {
@@ -22,7 +21,6 @@ export function getSeries(phase) {
       incident,
       latency: incident ? spikes.latency[i] : Math.round(190 + noise(i, 12)),
       anomaly: incident ? spikes.anomaly[i] : +(0.1 + noise(i, 0.02)).toFixed(2),
-      tx: incident ? spikes.tx[i] : Math.round(120 + noise(i, 6)),
     }
   })
 
