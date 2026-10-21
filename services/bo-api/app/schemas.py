@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ClientsSummary(BaseModel):
@@ -181,3 +181,123 @@ class RequestPage(BaseModel):
     page: int
     size: int
     total: int
+
+
+# --- Supervision (`/bo/supervision`) : mêmes formes que dashboard/src/data/*.js -----------------
+
+Tone = Literal["ok", "warn", "danger", "unknown"]
+ServiceStatus = Literal["ok", "warn", "down", "restored", "unknown"]
+Upstream = Literal["up", "down"]
+
+
+class StatusBadge(BaseModel):
+    label: str
+    tone: Tone
+
+
+class Banner(BaseModel):
+    tone: Tone
+    text: str
+    meta: str
+
+
+class Kpi(BaseModel):
+    key: str
+    label: str
+    value: str  # mis en forme (« 2 140 ms ») ; « — » si indisponible
+    raw: float | None
+    sub: str
+    tone: Tone | None = None
+
+
+class Overview(BaseModel):
+    updated_at: str
+    status: StatusBadge
+    banner: Banner
+    kpis: list[Kpi]
+    sources: dict[str, Upstream]  # prometheus, remediation : d'où viennent les chiffres
+
+
+class ServiceCard(BaseModel):
+    name: str
+    desc: str
+    status: ServiceStatus
+    metric: str
+
+
+class ServicesOut(BaseModel):
+    updated_at: str
+    services: list[ServiceCard]
+
+
+class SeriesMinute(BaseModel):
+    time: str  # « 10:42 », heure locale
+    ts: str  # horodatage UTC
+    incident: bool
+    latency: float | None  # ms (p95)
+    anomaly: float | None  # score [0, 1]
+    tx: float | None  # opérations par minute
+
+
+class IncidentWindow(BaseModel):
+    x1: str
+    x2: str
+
+
+class SupervisionSeries(BaseModel):
+    points: list[SeriesMinute]
+    incident: IncidentWindow | None
+
+
+class Resource(BaseModel):
+    label: str
+    value: str
+    percent: float | None
+
+
+class ResourcesOut(BaseModel):
+    resources: list[Resource]
+
+
+class LogLine(BaseModel):
+    time: str  # « 10:42:01.552 », heure locale
+    ts: str
+    level: Literal["DEBUG", "INFO", "WARN", "ERROR", "ALERT", "ACTION"]
+    source: str
+    msg: str
+
+
+class LogsOut(BaseModel):
+    logs: list[LogLine]
+
+
+class GrafanaPanel(BaseModel):
+    key: str
+    title: str
+    embed_url: str  # à mettre dans une <iframe>
+
+
+class GrafanaLink(BaseModel):
+    title: str
+    url: str
+
+
+class GrafanaOut(BaseModel):
+    base_url: str
+    dashboards: list[GrafanaLink]
+    panels: list[GrafanaPanel]
+    tools: list[GrafanaLink]  # Grafana, Prometheus, Loki (barre latérale)
+
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=2000)
+
+
+class AskSource(BaseModel):
+    doc: str
+    extrait: str
+
+
+class AskResponse(BaseModel):
+    answer: str
+    sources: list[AskSource]

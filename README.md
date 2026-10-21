@@ -29,16 +29,24 @@ services/auth-service/.venv/Scripts/python -m pip install -e "services/auth-serv
 services/auth-service/.venv/Scripts/python scripts/init_dev_secrets.py
 ```
 
-**3. Démarrage** : MariaDB, auth-service, payment-service.
+**3. Démarrage** : MariaDB, auth-service, payment-service, bo-api (back-office).
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d --build
+```
+
+Avec la supervision (Prometheus, Loki, promtail, Grafana, node-exporter), pour le dashboard :
+
+```bash
+docker compose -f docker-compose.dev.yml --profile obs up -d --build
 ```
 
 | Service | Adresse |
 |---|---|
 | auth-service (Swagger) | http://localhost:8001/docs |
 | payment-service (Swagger) | http://localhost:8002/docs |
+| bo-api, back-office du dashboard (Swagger) | http://localhost:8006/docs |
+| Grafana / Prometheus (profil `obs`) | http://localhost:3000 · http://localhost:9090 |
 | MariaDB (client SQL) | `localhost:3307`, base `orbe` ; mot de passe root dans `secrets/db_root_password` |
 
 Les images sont construites à partir de `dockerfiles/` (contexte : racine du dépôt) :

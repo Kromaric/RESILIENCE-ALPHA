@@ -41,6 +41,8 @@ def configure_logging(service_name: str, level: str) -> None:
         logging.getLogger(name).handlers = []
         logging.getLogger(name).propagate = True
     logging.getLogger("uvicorn.access").disabled = True
+    # httpx journalise chaque appel sortant (URL complète) : seulement ses avertissements
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def log_event(logger: logging.Logger, msg: str, level: int = logging.INFO, **fields) -> None:

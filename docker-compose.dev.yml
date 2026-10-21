@@ -97,8 +97,11 @@ services:
       BO_JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public_key
       BO_DB_HOST: mariadb
       BO_DB_PASSWORD_FILE: /run/secrets/bo_db_password
-      # Prometheus, Loki et Grafana ne tournent pas dans cette pile : les routes de
-      # supervision répondront « indisponible » (pile complète : infra/docker-compose.yml)
+      # Supervision : profil « obs » (sans lui, ces routes répondent « indisponible »)
+      BO_PROMETHEUS_URL: http://prometheus:9090
+      BO_LOKI_URL: http://loki:3100
+      BO_LOKI_SELECTOR: '{container=~"orbe-dev-.+"}'
+      BO_DISK_MOUNTPOINT: /var/lib   # Docker Desktop : pas de « / » côté node-exporter
       BO_CORS_ORIGINS: '["http://localhost:5173"]'   # dashboard lancé avec « npm run dev »
       BO_ENABLE_DOCS: "true"
       BO_LOG_LEVEL: INFO
@@ -109,6 +112,60 @@ services:
       - "127.0.0.1:8006:8006"
     mem_limit: 128m
 
+  # --- Observabilité (optionnelle) : docker compose -f docker-compose.dev.yml --profile obs up -d
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    profiles: [obs]
+    volumes:
+      - ./infra/dev/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    profiles: [obs]
+    pid: host
+    volumes:
+      - /:/host:ro
+    command: ["--path.rootfs=/host"]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.1.1
+    profiles: [obs]
+    volumes:
+      - ./infra/loki-config.yml:/etc/loki/local-config.yaml:ro
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    profiles: [obs]
+    volumes:
+      - ./infra/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/promtail-config.yml
+    depends_on: [loki]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:11.1.4
+    profiles: [obs]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    secrets: [grafana_admin_password]
+    volumes:
+      - ./infra/grafana-provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
 secrets:
   db_root_password:        { file: ./secrets/db_root_password }
   auth_db_password:        { file: ./secrets/auth_db_password }
@@ -116,6 +173,7 @@ secrets:
   remediation_db_password: { file: ./secrets/remediation_db_password }
   exporter_db_password:    { file: ./secrets/exporter_db_password }
   bo_db_password:          { file: ./secrets/bo_db_password }
+  grafana_admin_password:  { file: ./secrets/grafana_admin_password }
   probe_api_key:           { file: ./secrets/probe_api_key }
   jwt_private_key:         { file: ./secrets/jwt_private_key.pem }
   jwt_public_key:          { file: ./secrets/jwt_public_key.pem }
