@@ -40,7 +40,7 @@ class RegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     phone: str = Field(min_length=8, max_length=24, description="Format français ou international")
     display_name: str = Field(min_length=2, max_length=80)
-    password: str = Field(min_length=1, max_length=128, description="12 caractères minimum")
+    password: str = Field(min_length=1, max_length=128, description="8 caractères minimum")
 
 
 class RegisterResponse(BaseModel):
@@ -111,11 +111,24 @@ class FaceEnrollRequest(BaseModel):
     frames: list[str] = Field(min_length=1, max_length=30, description=FRAMES_DESCRIPTION)
 
 
+class FaceVerifyRequest(BaseModel):
+    frames: list[str] = Field(min_length=1, max_length=20, description=FRAMES_DESCRIPTION)
+    # Ignoré : la consigne est celle mémorisée par GET /face/challenge (gardé par compatibilité)
+    direction: Literal["left", "right"] | None = None
+
+
+class FaceVerifyResponse(BaseModel):
+    verified: bool
+    confidence: float
+    token: TokenResponse
+
+
 class FaceStatus(BaseModel):
     enrolled: bool
     templates: int
     model: str | None
     consent_at: str | None
+    token: TokenResponse | None = None
 
 
 class MeResponse(BaseModel):

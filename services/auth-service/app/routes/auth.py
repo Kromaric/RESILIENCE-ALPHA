@@ -288,7 +288,11 @@ async def login(
     return LoginResponse(
         mfa_required=True,
         session_id=session.id,
-        face_challenge=FaceChallenge(direction=direction, frames=settings.login_frames),
+        face_challenge=FaceChallenge(
+            direction=direction,
+            frames=settings.login_frames,
+            interval_ms=settings.login_interval_ms,
+        ),
     )
 
 
@@ -353,6 +357,8 @@ async def login_face(
         "matching_frames": decision.matching_frames,
         "faces_seen": decision.faces_seen,
         "head_turn": decision.head_turn,
+        "opposite_turn": decision.opposite_turn,
+        "direction": session.challenge,
         "client_ip": ip,
     }
 

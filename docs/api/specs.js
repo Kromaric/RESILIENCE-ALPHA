@@ -1068,7 +1068,7 @@ window.ORBE_SPECS = {
        "maxLength": 128,
        "minLength": 1,
        "title": "Password",
-       "description": "12 caractères minimum"
+       "description": "8 caractères minimum"
       }
      },
      "type": "object",

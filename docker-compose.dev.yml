@@ -61,17 +61,18 @@ services:
       AUTH_DB_PASSWORD_FILE: /run/secrets/auth_db_password
       AUTH_JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
       AUTH_FACE_KEY_FILE: /run/secrets/face_embedding_key
-      # Moteur simulé : scripts/dev_token.py et Swagger sans caméra. « insightface » pour
-      # tester le vrai modèle (prévoir mem_limit: 1g).
-      AUTH_FACE_ENGINE: fake
+      # Moteur InsightFace pour la reconnaissance faciale avec caméra réelle
+      AUTH_FACE_ENGINE: insightface
       AUTH_ENABLE_DOCS: "true"
       AUTH_LOG_LEVEL: INFO
     secrets: [auth_db_password, jwt_private_key, face_embedding_key]
+    volumes:
+      - ./services/auth-service/app:/opt/venv/lib/python3.12/site-packages/app:ro
     depends_on:
       mariadb: { condition: service_healthy }
     ports:
       - "127.0.0.1:8001:8001"
-    mem_limit: 256m
+    mem_limit: 1g
 
   payment-service:
     build: { context: ., dockerfile: dockerfiles/Dockerfile-payment }
@@ -83,6 +84,8 @@ services:
       PAYMENT_ENABLE_DOCS: "true"
       PAYMENT_LOG_LEVEL: INFO
     secrets: [payment_db_password, jwt_public_key]
+    volumes:
+      - ./services/payment-service/app:/usr/local/lib/python3.12/site-packages/app:ro
     depends_on:
       mariadb: { condition: service_healthy }
     ports:

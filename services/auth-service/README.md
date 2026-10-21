@@ -52,7 +52,7 @@ n'est pas accepté par payment-service.
 
 ## Sécurité
 - Mots de passe argon2id ; hachages et vérifications limités à 4 en parallèle (mémoire bornée).
-- Inscription : 12 caractères minimum, mots de passe courants refusés, 5 inscriptions par minute
+- Inscription : 8 caractères minimum, mots de passe courants refusés, 5 inscriptions par minute
   et par IP ; insertion limitée aux colonnes autorisées (jamais de compte de sonde).
 - 5 échecs (mot de passe **ou visage**) → compte bloqué 10 min ; 20 tentatives par minute et par IP.
 - Visage : similarité cosinus ≥ 0,40 sur au moins 3 images ; détection du vivant par défi

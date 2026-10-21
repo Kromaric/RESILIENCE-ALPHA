@@ -124,7 +124,7 @@ def test_login_with_the_face(add_client, enroll, face_login, private_key, db, cl
 
     assert step1["token"] is None
     assert step1["face_challenge"]["direction"] in ("left", "right")
-    assert step1["face_challenge"]["frames"] == 8
+    assert (step1["face_challenge"]["frames"], step1["face_challenge"]["interval_ms"]) == (12, 300)
     assert response.status_code == 200, response.text
     token = response.json()
     assert token["factors"] == ["pwd", "face"]
@@ -295,9 +295,15 @@ def observation(identity, yaw=0.0, quality=0.9):
     return FaceObservation(identity_vector(identity), quality, yaw, 1.0)
 
 
-def test_head_turn_compares_the_end_with_the_start():
-    assert head_turn([0, 0, 5, 10, 20, 20]) == pytest.approx(20)
-    assert head_turn([10, 10, 10]) == 0
+def test_head_turn_is_measured_from_the_starting_position():
+    assert head_turn([0, 0, 5, 10, 20, 20]) == (pytest.approx(20), 0)
+    assert head_turn([10, 10, 10]) == (0, 0)
+    # tourner puis revenir face à la caméra : l'amplitude atteinte compte
+    assert head_turn([0, 0, 8, 15, 15, 6, 0])[0] == pytest.approx(15)
+    # un pic isolé (bruit de mesure) ne suffit pas
+    assert head_turn([0, 0, 1, 30, 1, 0])[0] == pytest.approx(1)
+    # le sens demandé inverse les signes
+    assert head_turn([0, 0, -10, -20, -20], expected_sign=-1) == (pytest.approx(20), 0)
 
 
 @pytest.mark.parametrize(
@@ -307,6 +313,12 @@ def test_head_turn_compares_the_end_with_the_start():
         ("left", False, [0, 5, 10, 15, 20, 20], "liveness_failed"),
         ("right", False, [0, 5, 10, 15, 20, 20], None),
         ("right", True, [0, -5, -10, -15, -20, -20], None),
+        # aller-retour du bon côté
+        ("left", True, [0, 0, 6, 12, 14, 10, 4, 0], None),
+        # balayage des deux côtés, plus ample du mauvais côté : refusé
+        ("left", True, [0, 0, 10, 12, 0, -15, -20, -20], "liveness_failed"),
+        # rotation trop faible
+        ("left", True, [0, 0, 2, 4, 5, 5], "liveness_failed"),
     ],
 )
 def test_decide_checks_the_requested_direction(direction, left_is_positive, yaws, expected):
@@ -347,3 +359,55 @@ def test_ciphertext_is_bound_to_its_owner():
     assert np.allclose(asyncio.run(cipher.decrypt(sealed, "client-a")), vector)
     with pytest.raises(CipherError):
         asyncio.run(cipher.decrypt(sealed, "client-b"))
+
+
+# --- Vérification au paiement (POST /face/verify) -----------------------------------------------
+
+
+def test_payment_verification_uses_the_server_challenge(add_client, enroll, face_login, client):
+    add_client()
+    enroll("camille")
+    _, logged = face_login("camille")
+    headers = bearer(logged.json()["access_token"])
+
+    challenge = client.get("/face/challenge", headers=headers).json()
+    opposite = "right" if challenge["direction"] == "left" else "left"
+    # le client annonce le sens qui l'arrange et tourne de ce côté : refusé
+    cheat = client.post(
+        "/face/verify",
+        json={"frames": login_frames("camille", opposite), "direction": opposite},
+        headers=headers,
+    )
+    challenge = client.get("/face/challenge", headers=headers).json()
+    honest = client.post(
+        "/face/verify",
+        json={"frames": login_frames("camille", challenge["direction"])},
+        headers=headers,
+    )
+    replay = client.post(
+        "/face/verify",
+        json={"frames": login_frames("camille", challenge["direction"])},
+        headers=headers,
+    )
+
+    assert cheat.status_code == 401 and cheat.json()["detail"]["code"] == "liveness_failed"
+    assert honest.status_code == 200, honest.text
+    assert replay.status_code == 401
+    assert replay.json()["detail"]["code"] == "challenge_required"
+
+
+def test_payment_verification_failures_lock_the_account(add_client, enroll, face_login, client, db):
+    created = add_client()
+    enroll("camille")
+    _, logged = face_login("camille")
+    headers = bearer(logged.json()["access_token"])
+
+    for _ in range(2):
+        challenge = client.get("/face/challenge", headers=headers).json()
+        client.post(
+            "/face/verify",
+            json={"frames": login_frames("intrus", challenge["direction"])},
+            headers=headers,
+        )
+
+    assert db.get(Client, created.id).failed_logins == 2

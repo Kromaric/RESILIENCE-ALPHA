@@ -50,8 +50,10 @@ class Settings(BaseSettings):
     liveness_left_is_positive_yaw: bool = (
         True  # sens du lacet du modèle, à vérifier à la calibration
     )
-    login_frames: int = 8  # images attendues à la connexion (indication pour le front)
-    login_max_frames: int = 12
+    # Images de connexion : 12 × 300 ms ≈ 3,3 s, le temps de lire la consigne et de tourner
+    login_frames: int = 12  # images attendues (indication pour le front)
+    login_interval_ms: int = 300
+    login_max_frames: int = 16
     enroll_frames: int = 16
     enroll_max_frames: int = 20
     enroll_templates: int = 5

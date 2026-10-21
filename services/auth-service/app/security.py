@@ -165,6 +165,10 @@ def normalize_phone(raw: str) -> str | None:
 # Extrait des mots de passe les plus utilisés (listes publiques de fuites) ; comparaison
 # insensible à la casse
 COMMON_PASSWORDS = {
+    "12345678",
+    "password",
+    "azertyui",
+    "motdepasse",
     "123456789012",
     "1234567890ab",
     "azertyuiop12",
@@ -195,8 +199,8 @@ COMMON_PASSWORDS = {
 
 def password_problem(password: str, email: str) -> str | None:
     """Message d'erreur si le mot de passe est trop faible, sinon None."""
-    if len(password) < 12:
-        return "12 caractères minimum."
+    if len(password) < 8:
+        return "8 caractères minimum."
     lowered = password.lower()
     if lowered in COMMON_PASSWORDS or len(set(lowered)) < 4:
         return "Mot de passe trop courant ou trop simple."
