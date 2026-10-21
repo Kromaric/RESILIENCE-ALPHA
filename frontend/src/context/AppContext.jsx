@@ -1,18 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AppContext } from './AppContextInstance';
 import {
   checkBackendHealth,
-  loginWithPassword,
-  getMeProfile,
-  sendPaymentApi,
-  createPaymentRequestApi,
   getAccountInfo,
   getContacts,
   getTransactions,
   getQrCode,
+  sendPaymentApi,
+  createPaymentRequestApi,
+  getMeProfile,
+  loginWithPassword,
 } from '../services/api';
 
-// Initial registered contacts list on Orbe matching backend seed
+// Initial mock contacts matching UI specification
 const INITIAL_CONTACTS = [
   {
     id: '22222222-2222-2222-2222-222222222222',
@@ -63,7 +63,7 @@ const INITIAL_TRANSACTIONS = [
     section: "Aujourd'hui",
     initials: 'LM',
     counterparty: 'Léa Martin',
-    subtitle: 'Ciné · 10:44',
+    subtitle: 'Remboursement ciné · 14:32',
     amountFormatted: '− 12,50 €',
     amountNum: -12.5,
     type: 'sent',
@@ -159,7 +159,7 @@ const INITIAL_TRANSACTIONS = [
 ];
 
 export function AppProvider({ children }) {
-  // Navigation & Views: 'LOGIN', 'PIN', 'REGISTER', 'FACE_AUTH', 'FACE_ENROLL', 'HOME', 'SEND_CONTACT', 'VERIFY', 'RECEIVE', 'ACTIVITY'
+  // Navigation & Views: 'LOGIN', 'REGISTER', 'FACE_AUTH', 'FACE_ENROLL', 'HOME', 'SEND_CONTACT', 'VERIFY', 'RECEIVE', 'ACTIVITY'
   const [currentScreen, setCurrentScreen] = useState('LOGIN');
   const [activeTab, setActiveTab] = useState('home'); // 'home' | 'activity' | 'receive'
   const [receiveSubTab, setReceiveSubTab] = useState('qr'); // 'qr' | 'request'
@@ -226,37 +226,22 @@ export function AppProvider({ children }) {
     };
   }, []);
 
-  // Combined incident state: manual override takes precedence, otherwise auto health
+  // Compute effective incident status
   const isIncident = manualOverride !== null ? manualOverride : autoHealthStatus === 'incident';
 
-  // Toggle manual override between operational and incident
-  const toggleIncidentMode = () => {
-    setManualOverride((prev) => {
-      if (prev === null) {
-        return !isIncident;
-      }
-      return !prev;
-    });
-  };
+  const triggerIncident = useCallback(() => {
+    setManualOverride(true);
+  }, []);
 
-  // Reset to auto health detection
-  const resetToAutoDetection = () => {
+  const restoreOperational = useCallback(() => {
+    setManualOverride(false);
+  }, []);
+
+  const resetToAutoDetection = useCallback(() => {
     setManualOverride(null);
-    pollHealth();
-  };
+  }, []);
 
-  // Switch navigation tab
-  const navigateToTab = (tab) => {
-    setActiveTab(tab);
-    if (tab === 'home') setCurrentScreen('HOME');
-    if (tab === 'activity') setCurrentScreen('ACTIVITY');
-    if (tab === 'receive') {
-      setReceiveSubTab('qr');
-      setCurrentScreen('RECEIVE');
-    }
-  };
-
-  // Helper to synchronize data from live backend
+  // Fetch account, profile, contacts, transactions, QR code from backend
   const syncBackendData = useCallback(async (token) => {
     try {
       const [accountResult, contactsResult, txResult, qrResult, meResult] = await Promise.all([
@@ -323,6 +308,7 @@ export function AppProvider({ children }) {
     try {
       await sendPaymentApi(
         {
+          
           recipientId: selectedContact.id.length === 36 ? selectedContact.id : undefined,
           recipient: selectedContact.rawPhone || selectedContact.email,
           amount_cents: amountCents,
@@ -430,11 +416,6 @@ export function AppProvider({ children }) {
     }
   }, [pending2FA]);
 
-  // Direct login handler from PinScreen (legacy)
-  const handleLogin = async (pin) => {
-    await start2FALogin('camille@orbe.test', pin ? 'demo-password' : 'demo-password');
-  };
-
   // Logout handler returning to Login screen
   const handleLogout = useCallback(() => {
     setAuthToken(null);
@@ -493,10 +474,10 @@ export function AppProvider({ children }) {
         setCurrentScreen,
         activeTab,
         setActiveTab,
-        navigateToTab,
         receiveSubTab,
         setReceiveSubTab,
         user,
+        setUser,
         contacts,
         selectedContact,
         setSelectedContact,
@@ -508,13 +489,11 @@ export function AppProvider({ children }) {
         activityFilter,
         setActivityFilter,
         isIncident,
-        manualOverride,
-        autoHealthStatus,
         isCheckingHealth,
-        toggleIncidentMode,
+        triggerIncident,
+        restoreOperational,
         resetToAutoDetection,
         pollHealth,
-        handleLogin,
         handleLogout,
         start2FALogin,
         start2FAPayment,

@@ -15,12 +15,10 @@ export default function Header({ showBack = false, onBack = null }) {
   else if (currentScreen === 'VERIFY') title = 'Vérifier';
   else if (currentScreen === 'RECEIVE') title = 'Recevoir';
   else if (currentScreen === 'ACTIVITY') title = 'Activité';
-  else if (currentScreen === 'REGISTER' || currentScreen === 'LOGIN') title = 'orbe';
-  else if (currentScreen === 'HOME' || currentScreen === 'PIN') title = 'orbe';
+  else if (currentScreen === 'REGISTER' || currentScreen === 'LOGIN' || currentScreen === 'HOME') title = 'orbe';
 
-  const isHomeOrPinOrRegister =
+  const isBrandScreen =
     currentScreen === 'HOME' ||
-    currentScreen === 'PIN' ||
     currentScreen === 'LOGIN' ||
     currentScreen === 'REGISTER';
 
@@ -49,7 +47,7 @@ export default function Header({ showBack = false, onBack = null }) {
         )}
         <h1
           className={
-            isHomeOrPinOrRegister
+            isBrandScreen
               ? 'text-[24px] font-semibold text-[#0e5a6b] tracking-tight'
               : 'text-[20px] font-semibold text-[#0f1a1d]'
           }
@@ -59,7 +57,7 @@ export default function Header({ showBack = false, onBack = null }) {
       </div>
 
       <div>
-        {currentScreen === 'LOGIN' || currentScreen === 'PIN' || currentScreen === 'REGISTER' ? (
+        {currentScreen === 'LOGIN' || currentScreen === 'REGISTER' ? (
           <span className="bg-[#dcecef] text-[#0a4552] rounded px-2 py-0.5 text-xs font-medium">
             Démo
           </span>
@@ -68,7 +66,7 @@ export default function Header({ showBack = false, onBack = null }) {
             <span aria-hidden="true">■</span> Incident
           </span>
         ) : (
-          <span className="bg-[#1e7a45] text-white rounded-full px-2.5 py-0.5 text-xs font-medium inline-flex items-center gap-1.5 shadow-xs">
+          <span className="bg-[#d4edd9] text-[#13532a] rounded-full px-2.5 py-0.5 text-xs font-medium inline-flex items-center gap-1.5 shadow-xs">
             <span aria-hidden="true">●</span> Opérationnel
           </span>
         )}

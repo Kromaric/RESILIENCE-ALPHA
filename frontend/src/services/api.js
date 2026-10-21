@@ -44,7 +44,8 @@ async function fetchWithTimeout(url, options = {}) {
  * Health check service.
  * Probes the backend to determine if services are operational or in incident state.
  *
- * @returns {Promise<{ operational: boolean, detail: string }>}\n */
+ * @returns {Promise<{ operational: boolean, detail: string }>}
+ */
 export async function checkBackendHealth() {
   try {
     // Try payment service readiness endpoint first
@@ -227,53 +228,6 @@ export async function getMeProfile(token) {
     // Non-blocking fallback
   }
   return null;
-}
-
-/**
- * Attempt authentication using PIN or fallback to demo account.
- * Maintained for backward compatibility or simulated fallback.
- *
- * @param {string} pin
- * @returns {Promise<{ access_token: string, session_id?: string, client: { name: string, email: string, phone: string, accountMasked?: string } }>}
- */
-export async function authenticateWithPin(pin) {
-  try {
-    const data = await loginWithPassword('camille@orbe.test', pin ? 'demo-password' : 'demo-password');
-    const accessToken = data.token?.access_token;
-    let clientProfile = {
-      name: 'Camille Test',
-      email: 'camille@orbe.test',
-      phone: '+33 6 •• •• •• 78',
-    };
-
-    if (accessToken) {
-      const meData = await getMeProfile(accessToken);
-      if (meData) {
-        clientProfile = {
-          name: meData.display_name || 'Camille Test',
-          email: meData.email || 'camille@orbe.test',
-          phone: meData.phone_masked || '+33 6 •• •• •• 78',
-        };
-      }
-    }
-
-    return {
-      access_token: accessToken || 'fallback-demo-jwt-token',
-      session_id: data.session_id,
-      client: clientProfile,
-    };
-  } catch {
-    // Fallback smoothly to demo session
-  }
-
-  return {
-    access_token: 'fallback-demo-jwt-token',
-    client: {
-      name: 'Camille Test',
-      email: 'camille@orbe.test',
-      phone: '+33 6 •• •• •• 78',
-    },
-  };
 }
 
 /**
