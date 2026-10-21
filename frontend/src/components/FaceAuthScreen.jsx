@@ -13,6 +13,7 @@ import { loginFace, generateSimulatedLoginFrames } from '../services/api';
 export default function FaceAuthScreen() {
   const {
     isIncident,
+    user,
     on2FASuccess,
     completeFaceAuth,
     on2FACancel,
@@ -36,6 +37,13 @@ export default function FaceAuthScreen() {
   const direction = faceChallenge?.direction || 'left';
   const frameCount = faceChallenge?.frames || 8;
   const intervalMs = faceChallenge?.interval_ms || 250;
+
+  // Derive identity from pending login or current logged-in user
+  const accountIdentity = pending2FA?.email
+    ? pending2FA.email.split('@')[0]
+    : user?.email
+    ? user.email.split('@')[0]
+    : 'user';
 
   // Single frame capture as base64 JPEG without prefix
   const captureCurrentFrameB64 = useCallback(() => {
@@ -81,8 +89,8 @@ export default function FaceAuthScreen() {
         let frames = [];
 
         if (useSimulation || cameraPermissionDenied) {
-          // Simulated frames adhering to FakeFaceEngine JSON format
-          frames = generateSimulatedLoginFrames('camille', direction, frameCount);
+          // Simulated frames adhering to FakeFaceEngine JSON format with current user identity
+          frames = generateSimulatedLoginFrames(accountIdentity, direction, frameCount);
           for (let i = 1; i <= frameCount; i++) {
             setCapturedCount(i);
             await sleep(100);
@@ -103,7 +111,7 @@ export default function FaceAuthScreen() {
 
         // If no frames could be captured from camera, fallback to simulation
         if (frames.length === 0) {
-          frames = generateSimulatedLoginFrames('camille', direction, frameCount);
+          frames = generateSimulatedLoginFrames(accountIdentity, direction, frameCount);
         }
 
         // If in login flow with an active sessionId, call backend POST /login/face
@@ -157,6 +165,7 @@ export default function FaceAuthScreen() {
     [
       isIncident,
       cameraPermissionDenied,
+      accountIdentity,
       direction,
       frameCount,
       intervalMs,
@@ -459,7 +468,7 @@ export default function FaceAuthScreen() {
           onClick={on2FACancel}
           className="text-xs text-[#55636a] hover:text-[#0f1a1d] py-1 text-center font-medium cursor-pointer"
         >
-          {isLoginFlow ? 'Retour au code PIN' : 'Annuler et revenir au transfert'}
+          {isLoginFlow ? 'Retour à la connexion' : 'Annuler et revenir au transfert'}
         </button>
       </div>
     </div>

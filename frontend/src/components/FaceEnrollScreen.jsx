@@ -10,7 +10,7 @@ import { enrollFace, generateSimulatedEnrollFrames } from '../services/api';
  * No emojis used.
  */
 export default function FaceEnrollScreen() {
-  const { authToken, setCurrentScreen, syncBackendData } = useApp();
+  const { authToken, user, setCurrentScreen, syncBackendData } = useApp();
 
   const [consentChecked, setConsentChecked] = useState(false);
   const [enrollState, setEnrollState] = useState('IDLE'); // 'IDLE', 'CAPTURING', 'ENROLLED', 'ERROR'
@@ -46,6 +46,9 @@ export default function FaceEnrollScreen() {
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  // Identity name for simulated frames matching current user
+  const accountIdentity = user?.email ? user.email.split('@')[0] : 'user';
+
   // Perform multi-frame enrollment capture
   const startEnrollment = useCallback(async (useSimulation = false) => {
     if (!consentChecked) {
@@ -62,7 +65,7 @@ export default function FaceEnrollScreen() {
       let frames = [];
 
       if (useSimulation || cameraPermissionDenied) {
-        frames = generateSimulatedEnrollFrames('camille', totalFrames);
+        frames = generateSimulatedEnrollFrames(accountIdentity, totalFrames);
         for (let i = 1; i <= totalFrames; i++) {
           setCapturedCount(i);
           await sleep(100);
@@ -81,7 +84,7 @@ export default function FaceEnrollScreen() {
       }
 
       if (frames.length === 0) {
-        frames = generateSimulatedEnrollFrames('camille', totalFrames);
+        frames = generateSimulatedEnrollFrames(accountIdentity, totalFrames);
       }
 
       // Call backend enrollment endpoint if token is present
@@ -90,7 +93,8 @@ export default function FaceEnrollScreen() {
           await enrollFace(frames, authToken);
         } catch (apiErr) {
           console.warn('Backend enrollment warning:', apiErr.message);
-          // If in local mock or demo mode, proceed smoothly
+          // If in local mock or demo fallback, rethrow with clear error message
+          throw apiErr;
         }
       }
 
@@ -107,7 +111,7 @@ export default function FaceEnrollScreen() {
     } finally {
       isEnrollingRef.current = false;
     }
-  }, [consentChecked, cameraPermissionDenied, captureCurrentFrameB64, authToken, syncBackendData, setCurrentScreen]);
+  }, [consentChecked, cameraPermissionDenied, captureCurrentFrameB64, accountIdentity, authToken, syncBackendData, setCurrentScreen]);
 
   // Request webcam stream
   useEffect(() => {
