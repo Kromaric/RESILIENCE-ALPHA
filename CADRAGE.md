@@ -631,8 +631,8 @@ Exceptions documentées au cas par cas (cadvisor, alloy, mariadb).
 | Mode | Serveur, stockage `file` sur volume, TLS interne |
 | Amorçage | `infra/vault/bootstrap.sh` (appelé par Ansible) : init, unseal, montage KV v2, politiques, AppRoles |
 | Clés d'unseal / token root | Chiffrés avec **SOPS + age** dans `infra/vault/bootstrap.enc.yaml` ; la clé age reste hors dépôt (KeeWeb) |
-| Accès des services | **AppRole** par service (`hvac`), `role_id` / `secret_id` remis par secrets Docker |
-| Chemins | `kv/auth` (clé privée JWT), `kv/payment` (identifiants DB), `kv/remediation` (jeton webhook, identifiants `remediation_ro`), `kv/probe` (compte de test) |
+| Accès des services | Jeton en lecture seule (secret Docker `oorbe_vault_token`) ou **AppRole** (`role_id` / `secret_id` en secrets Docker), lu au démarrage par `app/vault.py` (auth, payment, bo-api) ; valeurs gardées en mémoire, jamais journalisées ; repli sur `/run/secrets/` si Vault est injoignable ou si une clé manque |
+| Chemins | **`secret/data/oorbe/config`** (choix de l'infra, KV v2) : mots de passe MariaDB des comptes de service, clé de chiffrement des gabarits faciaux, clé d'API de la sonde, mot de passe admin Grafana. Les clés JWT restent en secrets Docker. **Risque assumé** : un chemin unique donne à chaque service la lecture de tous les secrets ; cible : un chemin et une politique par service (`secret/oorbe/auth`, `…/payment`, `…/bo`), sans changement de code (`*_VAULT_KV_PATH`) |
 | Politiques | Lecture seule, un chemin par service ; seul `remediation-engine` peut écrire sur `kv/auth` et `kv/payment` (rotation SC-02) |
 
 ### 9.4 Contrôles en CI
