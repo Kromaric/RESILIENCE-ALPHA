@@ -15,11 +15,14 @@ export default function Header({ showBack = false, onBack = null }) {
   else if (currentScreen === 'VERIFY') title = 'Vérifier';
   else if (currentScreen === 'RECEIVE') title = 'Recevoir';
   else if (currentScreen === 'ACTIVITY') title = 'Activité';
-  else if (currentScreen === 'REGISTER') title = 'orbe';
+  else if (currentScreen === 'REGISTER' || currentScreen === 'LOGIN') title = 'orbe';
   else if (currentScreen === 'HOME' || currentScreen === 'PIN') title = 'orbe';
 
   const isHomeOrPinOrRegister =
-    currentScreen === 'HOME' || currentScreen === 'PIN' || currentScreen === 'REGISTER';
+    currentScreen === 'HOME' ||
+    currentScreen === 'PIN' ||
+    currentScreen === 'LOGIN' ||
+    currentScreen === 'REGISTER';
 
   const handleBackClick = () => {
     if (onBack) {
@@ -56,7 +59,7 @@ export default function Header({ showBack = false, onBack = null }) {
       </div>
 
       <div>
-        {currentScreen === 'PIN' || currentScreen === 'REGISTER' ? (
+        {currentScreen === 'LOGIN' || currentScreen === 'PIN' || currentScreen === 'REGISTER' ? (
           <span className="bg-[#dcecef] text-[#0a4552] rounded px-2 py-0.5 text-xs font-medium">
             Démo
           </span>

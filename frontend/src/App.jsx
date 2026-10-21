@@ -1,5 +1,6 @@
 import { AppProvider } from './context/AppContext';
 import { useApp } from './context/useApp';
+import LoginScreen from './components/LoginScreen';
 import PinScreen from './components/PinScreen';
 import RegisterScreen from './components/RegisterScreen';
 import FaceAuthScreen from './components/FaceAuthScreen';
@@ -27,6 +28,7 @@ function MobileApp() {
         className="w-[390px] h-[844px] bg-[#f5f6f4] text-[#0f1a1d] flex flex-col overflow-hidden rounded-2xl shadow-xl border border-[#d5dcdf] relative font-sans text-[15px] leading-[22px]"
       >
         {/* Active Screen Rendering */}
+        {currentScreen === 'LOGIN' && <LoginScreen />}
         {currentScreen === 'PIN' && <PinScreen />}
         {currentScreen === 'REGISTER' && <RegisterScreen />}
         {currentScreen === 'FACE_AUTH' && <FaceAuthScreen />}
@@ -38,7 +40,8 @@ function MobileApp() {
         {currentScreen === 'ACTIVITY' && <ActivityScreen />}
 
         {/* Bottom Navigation Bar (visible on dashboard views, hidden on auth/enroll screens) */}
-        {currentScreen !== 'PIN' &&
+        {currentScreen !== 'LOGIN' &&
+          currentScreen !== 'PIN' &&
           currentScreen !== 'REGISTER' &&
           currentScreen !== 'FACE_AUTH' &&
           currentScreen !== 'FACE_ENROLL' && <BottomNav />}

@@ -159,12 +159,12 @@ const INITIAL_TRANSACTIONS = [
 ];
 
 export function AppProvider({ children }) {
-  // Navigation & Views: 'PIN', 'FACE_AUTH', 'FACE_ENROLL', 'HOME', 'SEND_CONTACT', 'VERIFY', 'RECEIVE', 'ACTIVITY'
-  const [currentScreen, setCurrentScreen] = useState('PIN');
+  // Navigation & Views: 'LOGIN', 'PIN', 'REGISTER', 'FACE_AUTH', 'FACE_ENROLL', 'HOME', 'SEND_CONTACT', 'VERIFY', 'RECEIVE', 'ACTIVITY'
+  const [currentScreen, setCurrentScreen] = useState('LOGIN');
   const [activeTab, setActiveTab] = useState('home'); // 'home' | 'activity' | 'receive'
   const [receiveSubTab, setReceiveSubTab] = useState('qr'); // 'qr' | 'request'
 
-  // 2FA Biometric Context: null | { type: 'login', pin?: string } | { type: 'payment' }
+  // 2FA Biometric Context: null | { type: 'login', email?: string, password?: string } | { type: 'payment' }
   const [pending2FA, setPending2FA] = useState(null);
 
   // Biometric challenge state from auth-service
@@ -360,39 +360,31 @@ export function AppProvider({ children }) {
     setActiveTab('activity');
   }, [authToken, isIncident, selectedContact, sendAmount, sendReason]);
 
-  // Start 2FA login flow against auth-service /login
-  const start2FALogin = useCallback(async (pin) => {
-    try {
-      const result = await loginWithPassword('camille@orbe.test', 'demo-password');
+  // Start 2FA login flow against auth-service /login with custom credentials
+  const start2FALogin = useCallback(async (email = 'camille@orbe.test', password = 'demo-password') => {
+    const result = await loginWithPassword(email, password);
 
-      if (result.mfa_required) {
-        // Step 1 done: face challenge received
-        setSessionId(result.session_id);
-        setFaceChallenge(result.face_challenge || { direction: 'left', frames: 8, interval_ms: 250 });
-        setPending2FA({ type: 'login', pin, sessionId: result.session_id });
-        setCurrentScreen('FACE_AUTH');
-      } else if (result.face_enrollment_required) {
-        // Logged in with password only, no face enrolled yet -> go to enrollment screen
-        const token = result.token?.access_token || 'demo-token';
-        setAuthToken(token);
-        setSessionId(result.session_id);
-        setPending2FA(null);
-        setCurrentScreen('FACE_ENROLL');
-      } else {
-        // Direct login success
-        const token = result.token?.access_token || 'demo-token';
-        setAuthToken(token);
-        setPending2FA(null);
-        setCurrentScreen('HOME');
-        syncBackendData(token);
-      }
-    } catch (err) {
-      console.warn('Backend login fallback to demo session:', err);
-      // Fallback in demo mode: simulate face challenge
-      setSessionId('demo-session-id');
-      setFaceChallenge({ direction: 'left', frames: 8, interval_ms: 250 });
-      setPending2FA({ type: 'login', pin });
+    if (result.mfa_required) {
+      // Step 1 done: face challenge received
+      setSessionId(result.session_id);
+      setFaceChallenge(result.face_challenge || { direction: 'left', frames: 8, interval_ms: 250 });
+      setPending2FA({ type: 'login', email, sessionId: result.session_id });
       setCurrentScreen('FACE_AUTH');
+    } else if (result.face_enrollment_required) {
+      // Logged in with password only, no face enrolled yet -> go to enrollment screen
+      const token = result.token?.access_token || 'demo-token';
+      setAuthToken(token);
+      setSessionId(result.session_id);
+      setPending2FA(null);
+      await syncBackendData(token);
+      setCurrentScreen('FACE_ENROLL');
+    } else {
+      // Direct login success
+      const token = result.token?.access_token || 'demo-token';
+      setAuthToken(token);
+      setPending2FA(null);
+      await syncBackendData(token);
+      setCurrentScreen('HOME');
     }
   }, [syncBackendData]);
 
@@ -431,17 +423,26 @@ export function AppProvider({ children }) {
   const on2FACancel = useCallback(() => {
     if (pending2FA?.type === 'login') {
       setPending2FA(null);
-      setCurrentScreen('PIN');
+      setCurrentScreen('LOGIN');
     } else {
       setPending2FA(null);
       setCurrentScreen('VERIFY');
     }
   }, [pending2FA]);
 
-  // Direct login handler from PinScreen
+  // Direct login handler from PinScreen (legacy)
   const handleLogin = async (pin) => {
-    await start2FALogin(pin);
+    await start2FALogin('camille@orbe.test', pin ? 'demo-password' : 'demo-password');
   };
+
+  // Logout handler returning to Login screen
+  const handleLogout = useCallback(() => {
+    setAuthToken(null);
+    setSessionId(null);
+    setPending2FA(null);
+    setFaceChallenge(null);
+    setCurrentScreen('LOGIN');
+  }, []);
 
   // Create payment request
   const executeCreateRequest = async ({ payer, amount, description }) => {
@@ -514,6 +515,7 @@ export function AppProvider({ children }) {
         resetToAutoDetection,
         pollHealth,
         handleLogin,
+        handleLogout,
         start2FALogin,
         start2FAPayment,
         completeFaceAuth,

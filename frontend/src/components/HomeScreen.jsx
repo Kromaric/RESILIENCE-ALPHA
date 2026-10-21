@@ -1,4 +1,4 @@
-import { ArrowUpRight, ArrowDownLeft, QrCode } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, QrCode, LogOut } from 'lucide-react';
 import Header from './Header';
 import { useApp } from '../context/useApp';
 
@@ -9,7 +9,7 @@ import { useApp } from '../context/useApp';
  * No emojis used.
  */
 export default function HomeScreen() {
-  const { user, setCurrentScreen, setReceiveSubTab, transactions, navigateToTab } = useApp();
+  const { user, setCurrentScreen, setReceiveSubTab, transactions, navigateToTab, handleLogout } = useApp();
 
   // Take the 4 most recent transactions
   const recentTransactions = transactions.slice(0, 4);
@@ -20,12 +20,23 @@ export default function HomeScreen() {
       <Header />
 
       <div className="px-5 py-3 flex flex-col gap-4">
-        {/* User Greeting */}
-        <div>
-          <p className="text-[#55636a] text-sm">Bonjour</p>
-          <h1 className="text-2xl font-semibold text-[#0f1a1d] tracking-tight">
-            {user.name}
-          </h1>
+        {/* User Greeting with Logout Option */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[#55636a] text-sm">Bonjour</p>
+            <h1 className="text-2xl font-semibold text-[#0f1a1d] tracking-tight">
+              {user.name}
+            </h1>
+          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            title="Se déconnecter"
+            className="p-2 rounded-xl text-[#55636a] hover:text-[#c81e1e] hover:bg-[#fde8e8] transition-colors cursor-pointer"
+            aria-label="Déconnexion"
+          >
+            <LogOut className="w-5 h-5 stroke-[1.75]" />
+          </button>
         </div>
 
         {/* Linked Account Card */}
@@ -47,7 +58,7 @@ export default function HomeScreen() {
           </div>
 
           <p className="text-[13px] opacity-85 leading-snug m-0">
-            L'argent part de ce compte et arrive chez votre contact en quelques secondes.
+            L&apos;argent part de ce compte et arrive chez votre contact en quelques secondes.
           </p>
         </section>
 
@@ -74,13 +85,13 @@ export default function HomeScreen() {
             }}
             className="bg-white border border-[#d5dcdf] rounded-xl p-3 flex flex-col items-center justify-center gap-2 hover:bg-[#fafaf9] active:scale-[0.98] transition-all shadow-xs cursor-pointer group"
           >
-            <div className="w-11 h-11 rounded-full bg-[#dcecef] text-[#0a4552] flex items-center justify-center shadow-xs group-hover:bg-[#c9e3e7] transition-colors">
+            <div className="w-11 h-11 rounded-full bg-[#0e5a6b] text-white flex items-center justify-center shadow-xs group-hover:bg-[#0a4552] transition-colors">
               <ArrowDownLeft className="w-5 h-5 stroke-[2.5] stroke-current" />
             </div>
             <span className="text-xs font-semibold text-[#0f1a1d]">Demander</span>
           </button>
 
-          {/* Action 3: Mon QR */}
+          {/* Action 3: QR Code */}
           <button
             type="button"
             onClick={() => {
@@ -89,20 +100,19 @@ export default function HomeScreen() {
             }}
             className="bg-white border border-[#d5dcdf] rounded-xl p-3 flex flex-col items-center justify-center gap-2 hover:bg-[#fafaf9] active:scale-[0.98] transition-all shadow-xs cursor-pointer group"
           >
-            <div className="w-11 h-11 rounded-full bg-[#dcecef] text-[#0a4552] flex items-center justify-center shadow-xs group-hover:bg-[#c9e3e7] transition-colors">
+            <div className="w-11 h-11 rounded-full bg-[#0e5a6b] text-white flex items-center justify-center shadow-xs group-hover:bg-[#0a4552] transition-colors">
               <QrCode className="w-5 h-5 stroke-[2.5] stroke-current" />
             </div>
             <span className="text-xs font-semibold text-[#0f1a1d]">Mon QR</span>
           </button>
         </section>
 
-        {/* Recent Activity Card */}
-        <section
-          aria-label="Activité récente"
-          className="bg-white border border-[#d5dcdf] rounded-xl p-4 shadow-sm flex flex-col gap-1"
-        >
-          <div className="flex items-center justify-between pb-3">
-            <h2 className="text-lg font-semibold text-[#0f1a1d]">Activité récente</h2>
+        {/* Recent Activity Section */}
+        <section aria-label="Activité récente" className="mt-1 flex flex-col gap-2.5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-[#0f1a1d] tracking-tight m-0">
+              Activité récente
+            </h2>
             <button
               type="button"
               onClick={() => navigateToTab('activity')}
@@ -112,11 +122,11 @@ export default function HomeScreen() {
             </button>
           </div>
 
-          <div className="divide-y divide-[#d5dcdf]">
-            {recentTransactions.map((tx, idx) => (
+          <div className="flex flex-col gap-2">
+            {recentTransactions.map((tx) => (
               <div
-                key={`recent-${idx}`}
-                className="py-2.5 flex items-center justify-between gap-3 text-sm"
+                key={tx.id}
+                className="bg-white border border-[#d5dcdf] rounded-xl p-3.5 flex items-center justify-between shadow-2xs hover:border-[#7f8c93] transition-colors select-none"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-9 h-9 rounded-full bg-[#dcecef] text-[#0a4552] font-semibold text-xs flex items-center justify-center shrink-0">
