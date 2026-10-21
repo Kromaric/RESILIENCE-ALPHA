@@ -1,0 +1,24 @@
+# Dockerfile-dashboard : comme le .dockerignore de la racine, mais docs/ est conservé
+# (la page Documentation du dashboard embarque les .md de docs/ au build).
+
+# Secrets et fichiers locaux
+secrets/
+secrets*.zip
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+.claude/
+
+# Git et outillage
+.git/
+.github/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.egg-info/
+**/node_modules/
+
+# Tests (inutiles dans l'image)
+**/tests/
