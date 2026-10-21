@@ -314,8 +314,10 @@ Détail en §7.
 ### 4.7 dashboard
 
 - React/Tailwind, servi par Nginx sur `127.0.0.1:8080`.
-- Son Nginx ne relaie **que** `GET /incidents*` et `GET /status` vers le moteur (aucune route d'écriture).
-- Rafraîchissement 2 s (ou SSE). Panneaux Grafana intégrés (`allow_embedding`, viewer anonyme en lecture seule sur une organisation dédiée).
+- **Back : `bo-api` (8006, FastAPI, lecture seule)**, seul service appelé par le dashboard ; son Nginx relaie `/bo/` vers bo-api, rien d'autre. bo-api lit Prometheus, Loki, Grafana, le moteur de remédiation (`GET /incidents*`, `GET /status`), le détecteur et l'assistant ; lecture de la base avec le compte `bo_ro` (lecture seule ; clients via la vue `bo_clients`, email et téléphone masqués par MariaDB) ; aucun accès au socket Docker, aucune route d'écriture.
+- **Données applicatives** (`/bo/data`) : indicateurs, séries et contrôle comptable (rôle `viewer`) ; listes et fiches des opérations, clients et demandes (rôle `operator`, chaque consultation journalisée pour le SOC). Comptes de la sonde exclus.
+- **Connexion des opérateurs** : comptes distincts des clients (`operators`), mot de passe seul (pas de reconnaissance faciale pour le back-office), relayée par bo-api vers auth-service (`/operators/*`). JWT d'audience `orbe-bo` (1 h), rôles `viewer` et `operator`. Comptes créés par un administrateur (`scripts/create_operator.py`), jamais par l'API.
+- Rafraîchissement 2 s (ou SSE). Panneaux Grafana intégrés (`allow_embedding`, viewer anonyme en lecture seule, port publié sur 127.0.0.1) : tableau versionné `orbe-supervision`, liens fournis par `GET /bo/grafana`.
 - Vues : état des services (vert / dégradé / rétabli), frise de l'incident (détecté → contenu → rétabli → vérifié), score d'anomalie, transactions de la sonde.
 
 ### 4.8 assistant-rag (8005)
@@ -629,8 +631,8 @@ Exceptions documentées au cas par cas (cadvisor, alloy, mariadb).
 | Mode | Serveur, stockage `file` sur volume, TLS interne |
 | Amorçage | `infra/vault/bootstrap.sh` (appelé par Ansible) : init, unseal, montage KV v2, politiques, AppRoles |
 | Clés d'unseal / token root | Chiffrés avec **SOPS + age** dans `infra/vault/bootstrap.enc.yaml` ; la clé age reste hors dépôt (KeeWeb) |
-| Accès des services | **AppRole** par service (`hvac`), `role_id` / `secret_id` remis par secrets Docker |
-| Chemins | `kv/auth` (clé privée JWT), `kv/payment` (identifiants DB), `kv/remediation` (jeton webhook, identifiants `remediation_ro`), `kv/probe` (compte de test) |
+| Accès des services | Jeton en lecture seule (secret Docker `oorbe_vault_token`) ou **AppRole** (`role_id` / `secret_id` en secrets Docker), lu au démarrage par `app/vault.py` (auth, payment, bo-api) ; valeurs gardées en mémoire, jamais journalisées ; repli sur `/run/secrets/` si Vault est injoignable ou si une clé manque |
+| Chemins | **`secret/data/oorbe/config`** (choix de l'infra, KV v2) : mots de passe MariaDB des comptes de service, clé de chiffrement des gabarits faciaux, clé d'API de la sonde, mot de passe admin Grafana. Les clés JWT restent en secrets Docker. **Risque assumé** : un chemin unique donne à chaque service la lecture de tous les secrets ; cible : un chemin et une politique par service (`secret/oorbe/auth`, `…/payment`, `…/bo`), sans changement de code (`*_VAULT_KV_PATH`) |
 | Politiques | Lecture seule, un chemin par service ; seul `remediation-engine` peut écrire sur `kv/auth` et `kv/payment` (rotation SC-02) |
 
 ### 9.4 Contrôles en CI

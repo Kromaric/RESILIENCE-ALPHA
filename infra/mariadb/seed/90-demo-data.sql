@@ -14,6 +14,11 @@ INSERT INTO clients (id, email, phone, display_name, password_hash, is_probe) VA
     ('99999999-9999-9999-9999-999999999901', 'probe@orbe.test',           '+33600000001', 'Sonde payeur',       @pwd, TRUE),
     ('99999999-9999-9999-9999-999999999902', 'probe-recipient@orbe.test', '+33600000002', 'Sonde bénéficiaire', @pwd, TRUE);
 
+-- opérateurs du back-office (dashboard), même mot de passe de démo
+INSERT INTO operators (id, email, display_name, password_hash, role) VALUES
+    ('aaaaaaaa-0000-0000-0000-000000000001', 'ops@orbe.test',    'Opérateur SOC',   @pwd, 'operator'),
+    ('aaaaaaaa-0000-0000-0000-000000000002', 'viewer@orbe.test', 'Lecture seule',   @pwd, 'viewer');
+
 INSERT INTO payout_accounts (id, client_id, label, iban_last4, is_default) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Banque Démo', '0142', TRUE),
     ('aaaaaaaa-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', 'Banque Démo', '0189', TRUE),

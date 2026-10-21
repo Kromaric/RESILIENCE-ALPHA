@@ -15,11 +15,13 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /src
 COPY services/auth-service/pyproject.toml ./
-COPY services/auth-service/app ./app
+# Dépendances d'abord, avec un paquet vide : cette couche (longue, insightface est compilé)
+# reste en cache tant que pyproject.toml ne change pas.
 # insightface installe aussi opencv-python (version graphique, qui exige X11) : on ne garde que
 # la version headless, qui partage le même module cv2
-RUN pip install --no-cache-dir ".[face]" \
-    && pip uninstall -y opencv-python \
+RUN mkdir app && touch app/__init__.py \
+    && pip install --no-cache-dir ".[face]" \
+    && pip uninstall -y orbe-auth-service opencv-python \
     && pip install --no-cache-dir --force-reinstall --no-deps opencv-python-headless
 
 ARG FACE_MODEL=buffalo_s
@@ -38,6 +40,9 @@ RUN apt-get update \
     && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin orbe
 COPY --from=build /opt/venv /opt/venv
 COPY --from=build /opt/insightface /opt/insightface
+# Code du service en dernier, hors du venv : le modifier ne reconstruit que cette couche
+WORKDIR /srv
+COPY services/auth-service/app ./app
 USER 10001
 EXPOSE 8001
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \

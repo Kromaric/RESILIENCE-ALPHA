@@ -121,6 +121,8 @@ Clés primaires soulignées, clés étrangères précédées de `#`.
 | **client_face_templates** | <u>id</u>, embedding_ct, embedding_dim, model, quality_score, captured_at, #client_id | ENREGISTRER |
 | **client_apis** | <u>id</u>, name, type, key_hash *unique, nullable*, scopes, active, created_at | remplace `api_keys` |
 | **sessions** | <u>id</u> (= `jti`), status, factors, challenge, face_score, ip_address, opened_at, expires_at, revoked_at, revocation_reason, #client_id, #client_api_id, #face_template_id *nullable* | OUVRIR, AUTHENTIFIER, CONFIRMER |
+| **operators** | <u>id</u>, email *unique*, display_name, password_hash, role (`viewer`, `operator`), active, failed_logins, locked_until, last_login_at, created_at | — (back-office, sans lien avec les clients) |
+| **operator_sessions** | <u>id</u> (= `jti`, audience `orbe-bo`), status, ip_address, opened_at, expires_at, revoked_at, revocation_reason, #operator_id | sessions des opérateurs |
 | **ledger_accounts** | <u>id</u>, type, label, balance_cents, #client_id *unique, nullable* | DÉTENIR |
 | **payout_accounts** | <u>id</u>, label, iban_last4, is_default, #client_id | POSSÉDER |
 | **contacts** | <u>#owner_id, #contact_id</u>, alias, added_at | ÊTRE_CONTACT (association n,n → table) |
@@ -132,8 +134,9 @@ Clés primaires soulignées, clés étrangères précédées de `#`.
 
 | Compte | Droits |
 |---|---|
-| `auth_svc` | `clients` (lecture, insertion limitée, `UPDATE (failed_logins, locked_until, biometric_consent_at)`), `client_face_templates` (lecture, insertion, suppression), `sessions` (lecture/écriture), `client_apis` (lecture) |
+| `auth_svc` | `clients` (lecture, insertion limitée, `UPDATE (failed_logins, locked_until, biometric_consent_at)`), `client_face_templates` (lecture, insertion, suppression), `sessions` (lecture/écriture), `client_apis` (lecture), `operators` (lecture, `UPDATE (failed_logins, locked_until, last_login_at)`), `operator_sessions` (lecture/écriture) |
 | `payment_svc` | `clients` (lecture, `UPDATE (qr_token)`), `sessions` (lecture : révocation), `ledger_accounts` (lecture, `UPDATE (balance_cents)`), `ledger_entries` (lecture, insertion), `transactions`, `payment_requests`, `payout_accounts` et `contacts` (lecture, écriture) |
+| `bo_ro` | vue `bo_clients` (email et téléphone masqués), colonnes non sensibles de `transactions`, `payment_requests`, `payout_accounts`, `sessions` ; `ledger_entries`, `ledger_accounts` (lecture) |
 | `remediation_ro` | lecture de `transactions`, `ledger_entries`, `ledger_accounts` (contrôle de cohérence) |
 
 ## 8. Évolutions par rapport à la v1

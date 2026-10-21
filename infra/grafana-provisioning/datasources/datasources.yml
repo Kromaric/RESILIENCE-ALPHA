@@ -3,6 +3,7 @@ apiVersion: 1
 datasources:
   # Configuration pour Prometheus
   - name: Prometheus
+    uid: prometheus # uid fixe : référencé par les tableaux versionnés
     type: prometheus
     access: proxy
     url: http://prometheus:9090
@@ -13,6 +14,7 @@ datasources:
 
   # Configuration pour Loki
   - name: Loki
+    uid: loki
     type: loki
     access: proxy
     url: http://loki:3100

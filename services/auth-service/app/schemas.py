@@ -57,6 +57,22 @@ class TokenResponse(BaseModel):
     factors: list[str]
 
 
+class OperatorTokenResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"  # noqa: S105 — type de jeton, pas un secret
+    expires_in: int
+    role: Literal["viewer", "operator"]
+
+
+class OperatorMe(BaseModel):
+    operator_id: str
+    email: str
+    display_name: str
+    role: Literal["viewer", "operator"]
+    session_id: str
+    expires_at: str
+
+
 class FaceChallenge(BaseModel):
     """Consigne du test du vivant : filmer le visage pendant que la tête tourne dans ce sens."""
 

@@ -78,6 +78,39 @@ CREATE TABLE sessions (
     INDEX ix_sessions_client (client_id, status)
 ) ENGINE = InnoDB;
 
+-- --- Back-office : opérateurs du dashboard (auth-service) ----------------------------
+-- Comptes distincts des clients : pas d'inscription publique, création par un
+-- administrateur (scripts/create_operator.py, compte root). Mot de passe seul.
+
+CREATE TABLE operators (
+    id             CHAR(36)     NOT NULL,
+    email          VARCHAR(254) NOT NULL,
+    display_name   VARCHAR(80)  NOT NULL,
+    password_hash  VARCHAR(255) NOT NULL,              -- argon2id
+    role           ENUM ('viewer', 'operator') NOT NULL DEFAULT 'viewer',
+    active         BOOLEAN      NOT NULL DEFAULT TRUE,
+    failed_logins  INT          NOT NULL DEFAULT 0,
+    locked_until   DATETIME     NULL,
+    last_login_at  DATETIME     NULL,
+    created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_operators_email UNIQUE (email)
+) ENGINE = InnoDB;
+
+CREATE TABLE operator_sessions (
+    id                 CHAR(36)     NOT NULL,          -- = jti du JWT (audience orbe-bo)
+    operator_id        CHAR(36)     NOT NULL,
+    status             ENUM ('active', 'revoked', 'expired') NOT NULL,
+    ip_address         VARCHAR(45)  NULL,
+    opened_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    expires_at         DATETIME(3)  NOT NULL,
+    revoked_at         DATETIME(3)  NULL,
+    revocation_reason  VARCHAR(64)  NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_operator_sessions_operator FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE,
+    INDEX ix_operator_sessions_operator (operator_id, status)
+) ENGINE = InnoDB;
+
 -- --- Paiements (payment-service) ----------------------------------------------------
 
 CREATE TABLE ledger_accounts (
@@ -198,6 +231,23 @@ CREATE TABLE payment_requests (
     INDEX ix_payment_requests_requester (requester_id, status, created_at),
     INDEX ix_payment_requests_payer (payer_id, status, created_at)
 ) ENGINE = InnoDB;
+
+-- --- Back-office : vue des clients pour bo-api ------------------------------------------
+-- Email et téléphone masqués par la base elle-même : le compte bo_ro n'a droit qu'à cette vue
+-- (jamais à la table clients) et ne peut donc pas lire ces valeurs en clair. Pas de hachage
+-- de mot de passe, de jeton QR ni de gabarit facial.
+CREATE SQL SECURITY DEFINER VIEW bo_clients AS
+SELECT
+    c.id,
+    c.display_name,
+    CONCAT(LEFT(c.email, 1), '•••@', SUBSTRING_INDEX(c.email, '@', -1)) AS email_masked,
+    CONCAT(LEFT(c.phone, 3), ' ', SUBSTRING(c.phone, 4, 1), ' •• •• •• ', RIGHT(c.phone, 2)) AS phone_masked,
+    c.is_probe,
+    c.failed_logins,
+    c.locked_until,
+    EXISTS (SELECT 1 FROM client_face_templates t WHERE t.client_id = c.id) AS face_enrolled,
+    c.created_at
+FROM clients c;
 
 -- --- Données de référence -------------------------------------------------------------
 
