@@ -42,43 +42,9 @@ Erreurs : `{"detail": {"code": "...", "message": "..."}}` — `invalid_credentia
 
 ## Sécurité
 - Mots de passe argon2id ; hachages et vérifications limités à 4 en parallèle (mémoire bornée).
-- Inscription : 12 caractères minimum, mots de passe courants refusés, 5 inscriptions par minute
+- Inscription : 8 caractères minimum, mots de passe courants refusés, 5 inscriptions par minute
   et par IP ; insertion limitée aux colonnes autorisées (jamais de compte de sonde).
 - 5 échecs (mot de passe **ou visage**) → compte bloqué 10 min ; 20 tentatives par minute et par IP.
 - Visage : similarité cosinus ≥ 0,40 sur au moins 3 images ; détection du vivant par défi
   (tourner la tête dans un sens tiré au hasard : une photo figée échoue). Un échec ferme la session
   en attente ; une session ne sert qu'une fois.
-- Gabarits chiffrés et liés à leur propriétaire (client_id en donnée authentifiée) ; clé dans un
-  secret Docker ou Vault Transit. Un compte qui a un visage ne le remplace ou ne le supprime que
-  depuis une session confirmée par ce visage.
-- Aucun mot de passe, jeton, clé d'API, image ni gabarit dans les journaux.
-
-## Configuration (préfixe `AUTH_`)
-| Variable | Défaut |
-|---|---|
-| `AUTH_DB_HOST` / `AUTH_DB_PORT` / `AUTH_DB_NAME` / `AUTH_DB_USER` | `mariadb` / `3306` / `orbe` / `auth_svc` |
-| `AUTH_DB_PASSWORD_FILE` | `/run/secrets/auth_db_password` |
-| `AUTH_JWT_PRIVATE_KEY_FILE` | `/run/secrets/jwt_private_key` |
-| `AUTH_JWT_TTL_SECONDS` | `900` |
-| `AUTH_FACE_ENGINE` | `insightface` (`fake` : moteur simulé, tests et développement sans caméra) |
-| `AUTH_FACE_MODEL` / `AUTH_FACE_THRESHOLD` | `buffalo_s` / `0.40` |
-| `AUTH_LIVENESS_MIN_TURN_DEGREES` | `8.0` |
-| `AUTH_FACE_CIPHER` | `local` (clé `AUTH_FACE_KEY_FILE`) ou `vault` (Transit, clé `orbe-face`) |
-| `AUTH_FACE_KEY_FILE` | `/run/secrets/face_embedding_key` (64 caractères hexadécimaux) |
-| `AUTH_PENDING_2FA_SECONDS` | `120` |
-| `AUTH_LOCKOUT_THRESHOLD` / `AUTH_LOCKOUT_MINUTES` | `5` / `10` |
-| `AUTH_LOGIN_RATE_PER_IP` / `AUTH_REGISTER_RATE_PER_IP` | `20` / `5` |
-| `AUTH_ENABLE_DOCS` | `false` (Swagger sur `/docs` si `true`) |
-
-## Développement
-```bash
-py -3.13 -m venv .venv
-.venv/Scripts/python -m pip install -e ".[dev]"
-.venv/Scripts/python -m pytest
-.venv/Scripts/python -m ruff check .
-```
-Les tests utilisent SQLite en mémoire et le moteur de visage simulé (`FakeFaceEngine`) ; ni
-MariaDB, ni caméra, ni modèle ne sont nécessaires. Pour essayer le vrai modèle hors Docker :
-`.venv/Scripts/python -m pip install -e ".[face]"`.
-
-Clés JWT locales : `python scripts/gen_jwt_keys.py` à la racine du dépôt.

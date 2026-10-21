@@ -40,7 +40,7 @@ class RegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     phone: str = Field(min_length=8, max_length=24, description="Format français ou international")
     display_name: str = Field(min_length=2, max_length=80)
-    password: str = Field(min_length=1, max_length=128, description="12 caractères minimum")
+    password: str = Field(min_length=1, max_length=128, description="8 caractères minimum")
 
 
 class RegisterResponse(BaseModel):
