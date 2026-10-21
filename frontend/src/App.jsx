@@ -10,7 +10,6 @@ import VerifyScreen from './components/VerifyScreen';
 import ReceiveScreen from './components/ReceiveScreen';
 import ActivityScreen from './components/ActivityScreen';
 import BottomNav from './components/BottomNav';
-import DemoController from './components/DemoController';
 
 /**
  * Main application router container.
@@ -43,9 +42,6 @@ function MobileApp() {
           currentScreen !== 'FACE_AUTH' &&
           currentScreen !== 'FACE_ENROLL' && <BottomNav />}
       </main>
-
-      {/* Floating Demo Resilience Controls */}
-      <DemoController />
     </div>
   );
 }

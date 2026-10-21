@@ -29,9 +29,9 @@ export default function VerifyScreen() {
     start2FAPayment();
   };
 
-  const formattedDisplayAmount = sendAmount.includes('€')
+  const formattedDisplayAmount = sendAmount?.includes('€')
     ? sendAmount
-    : `${sendAmount} €`;
+    : `${sendAmount || '10,00'} €`;
 
   return (
     <div className="flex-1 flex flex-col justify-between overflow-y-auto no-scrollbar">
@@ -55,7 +55,7 @@ export default function VerifyScreen() {
                 </span>
                 <span className="text-xs text-[#f47066] leading-relaxed">
                   Anomalie détectée à{' '}
-                  <span className="font-mono text-white">10:42:07</span>. Votre argent n'a
+                  <span className="font-mono text-white">10:42:07</span>. Votre argent n&apos;a
                   pas quitté votre compte.
                 </span>
               </div>
@@ -107,14 +107,14 @@ export default function VerifyScreen() {
               </span>
               <div className="flex items-center gap-3 mt-1">
                 <div className="w-10 h-10 rounded-full bg-[#dcecef] text-[#0a4552] font-semibold text-xs flex items-center justify-center shrink-0">
-                  {selectedContact.initials}
+                  {selectedContact?.initials || 'DE'}
                 </div>
                 <div className="flex flex-col">
                   <span className="font-semibold text-[15px] text-[#0f1a1d]">
-                    {selectedContact.name}
+                    {selectedContact?.name || 'Destinataire'}
                   </span>
                   <span className="font-mono text-xs text-[#55636a]">
-                    {selectedContact.phone}
+                    {selectedContact?.phone || ''}
                   </span>
                 </div>
               </div>
@@ -137,7 +137,7 @@ export default function VerifyScreen() {
             {/* Service Status Row */}
             <div className="flex items-center justify-between pt-0.5">
               <span className="text-xs font-semibold text-[#55636a] uppercase tracking-wider">
-                Service d'envoi
+                Service d&apos;envoi
               </span>
               {isIncident ? (
                 <span className="text-[#c81e1e] font-semibold text-xs inline-flex items-center gap-1.5">
@@ -165,7 +165,7 @@ export default function VerifyScreen() {
               Envoi suspendu
             </button>
             <p className="text-xs text-[#55636a] text-center leading-relaxed">
-              Le bouton revient dès qu'un virement test a réussi.
+              Le bouton revient dès qu&apos;un virement test a réussi.
             </p>
           </>
         ) : (

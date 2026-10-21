@@ -1,17 +1,17 @@
 import { useState } from 'react';
-import { ArrowLeft, UserPlus, AlertCircle, CheckCircle, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, UserPlus, AlertCircle, ShieldCheck } from 'lucide-react';
 import Header from './Header';
 import { useApp } from '../context/useApp';
-import { registerUser, loginWithPassword } from '../services/api';
+import { registerUser } from '../services/api';
 
 /**
  * Screen: User Registration Screen.
  * Allows creating a new bank client account with email, phone, display name and password.
- * After successful registration, automatically logs in and transitions to biometric enrollment.
+ * After successful registration, automatically redirects to login screen.
  * No emojis used.
  */
 export default function RegisterScreen() {
-  const { setCurrentScreen, setAuthToken, setSessionId, setPending2FA, syncBackendData, setUser } = useApp();
+  const { setCurrentScreen, setLoginNotice, setPrefilledEmail } = useApp();
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -21,12 +21,10 @@ export default function RegisterScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
-    setSuccessMessage('');
 
     if (!displayName.trim()) {
       setErrorMessage('Veuillez renseigner votre nom complet.');
@@ -62,47 +60,15 @@ export default function RegisterScreen() {
         password,
       });
 
-      // Update local user state immediately
-      if (setUser) {
-        setUser({
-          name: trimmedName,
-          email: normalizedEmail,
-          phone: trimmedPhone,
-          accountMasked: 'FR76 •••• •••• 0142',
-          bankLabel: 'Banque Démo',
-          initials: trimmedName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || 'OR',
-          faceEnrolled: false,
-        });
+      if (setLoginNotice) {
+        setLoginNotice('Compte créé avec succès ! Connectez-vous avec vos identifiants.');
       }
-
-      setSuccessMessage('Compte créé avec succès ! Connexion automatique...');
-
-      // Auto login with the newly created account to get session / token for biometric enrollment
-      try {
-        const loginRes = await loginWithPassword(normalizedEmail, password);
-        const token = loginRes.token?.access_token || 'demo-token';
-        setAuthToken(token);
-        setSessionId(loginRes.session_id);
-        setPending2FA(null);
-
-        if (token) {
-          syncBackendData(token);
-        }
-
-        // Delay for visual confirmation before transitioning to face enrollment
-        setTimeout(() => {
-          setCurrentScreen('FACE_ENROLL');
-        }, 600);
-      } catch (loginErr) {
-        console.warn('Auto-login error after registration:', loginErr);
-        // Clear success message when error occurs to prevent dual banners
-        setSuccessMessage('');
-        setErrorMessage('Compte créé, mais échec de la connexion automatique. Veuillez vous connecter.');
-        setIsLoading(false);
+      if (setPrefilledEmail) {
+        setPrefilledEmail(normalizedEmail);
       }
+      setCurrentScreen('LOGIN');
     } catch (err) {
       setIsLoading(false);
-      setSuccessMessage('');
       if (err.code === 'email_taken') {
         setErrorMessage('Cette adresse email est déjà utilisée.');
       } else if (err.code === 'phone_taken') {
@@ -143,25 +109,19 @@ export default function RegisterScreen() {
             Créer un compte orbe
           </h2>
           <p className="text-xs text-[#55636a] mt-1">
-            Renseignez vos coordonnées puis enregistrez votre visage
+            Renseignez vos coordonnées pour créer votre compte
           </p>
         </div>
 
         {/* Status / Error Banner */}
-        <div className="px-6 pt-2">
-          {errorMessage && (
+        {errorMessage && (
+          <div className="px-6 pt-2">
             <div className="p-3 rounded-xl bg-[#ffdad6] text-[#93000a] text-xs flex items-start gap-2 shadow-xs mb-2">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#ba1a1a]" />
               <span>{errorMessage}</span>
             </div>
-          )}
-          {successMessage && (
-            <div className="p-3 rounded-xl bg-[#def2e5] text-[#1e7a45] text-xs flex items-start gap-2 shadow-xs mb-2">
-              <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#1e7a45]" />
-              <span>{successMessage}</span>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Registration Form */}
         <form id="register-form" onSubmit={handleSubmit} className="px-6 space-y-3.5 pt-1">

@@ -295,24 +295,24 @@ export async function getAccountInfo(token) {
       const defaultAccount =
         (data.payout_accounts || []).find((a) => a.is_default) || data.payout_accounts?.[0];
       return {
-        balance_cents: data.balance_cents ?? 245000,
+        balance_cents: data.balance_cents ?? 0,
         currency: data.currency || 'EUR',
         payout_account: {
-          label: defaultAccount?.label || 'Banque Démo',
-          iban_last4: defaultAccount?.iban_last4 || '0142',
+          label: defaultAccount?.label || 'Compte Orbe',
+          iban_last4: defaultAccount?.iban_last4 || '',
         },
       };
     }
   } catch {
-    // Fallback to mock account
+    // Fallback
   }
 
   return {
-    balance_cents: 245000,
+    balance_cents: 0,
     currency: 'EUR',
     payout_account: {
-      label: 'Banque Démo',
-      iban_last4: '0142',
+      label: 'Compte Orbe',
+      iban_last4: '',
     },
   };
 }
@@ -332,7 +332,7 @@ export async function getContacts(token) {
     });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         return data.map((c, index) => {
           const name = c.alias || c.display_name || 'Contact';
           const initials = name
@@ -341,24 +341,23 @@ export async function getContacts(token) {
             .join('')
             .toUpperCase()
             .slice(0, 2);
-          const isLea = name.toLowerCase().includes('léa') || name.toLowerCase().includes('lea');
           return {
             id: c.contact_id || String(index + 1),
-            initials: initials || 'CT',
+            initials: initials || 'CO',
             name: name,
-            phone: isLea ? '+33 6 •• •• 12 34' : '+33 7 •• •• 56 78',
-            rawPhone: isLea ? '+33612345677' : '+33612345676',
-            email: isLea ? 'lea@orbe.test' : 'hugo@orbe.test',
-            defaultAmount: isLea ? '12,50' : '25,00',
-            defaultReason: isLea ? 'Ciné' : 'Pizza vendredi',
+            phone: c.display_name && c.display_name !== c.alias ? c.display_name : 'Contact Orbe',
+            rawPhone: '',
+            email: '',
+            defaultAmount: '10,00',
+            defaultReason: 'Virement',
           };
         });
       }
     }
   } catch {
-    // Fallback handled by caller
+    // Fallback
   }
-  return null;
+  return [];
 }
 
 /**
@@ -466,9 +465,10 @@ export async function sendPaymentApi(paymentData, token) {
       ? crypto.randomUUID()
       : `key-${Date.now()}`;
 
-  const recipientTarget = paymentData.recipientId
+  const isUuid = paymentData.recipientId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paymentData.recipientId);
+  const target = isUuid
     ? { recipient_contact: paymentData.recipientId }
-    : { recipient: paymentData.recipient || '+33612345677' };
+    : { recipient: paymentData.recipient || paymentData.recipientId || '+33612345677' };
 
   const res = await fetchWithTimeout(`${PAYMENT_URL}/pay`, {
     method: 'POST',
@@ -477,16 +477,16 @@ export async function sendPaymentApi(paymentData, token) {
       'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify({
-      ...recipientTarget,
+      ...target,
       amount_cents: paymentData.amount_cents,
       currency: 'EUR',
-      description: paymentData.description || 'Ciné',
+      description: paymentData.description || 'Paiement',
       card: {
         number: '4242 4242 4242 4242',
         exp_month: 12,
         exp_year: 2030,
         cvc: '123',
-        holder: 'Camille Test',
+        holder: paymentData.holder || 'Client Orbe',
       },
     }),
   });

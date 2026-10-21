@@ -12,15 +12,23 @@ import { useApp } from '../context/useApp';
  * No emojis used.
  */
 export default function ReceiveScreen() {
-  const { receiveSubTab, setReceiveSubTab, user, contacts, executeCreateRequest } = useApp();
+  const { receiveSubTab, setReceiveSubTab, user, contacts, executeCreateRequest, navigateToTab, setCurrentScreen } = useApp();
 
   // State for "Demander" form
-  const [selectedPayerId, setSelectedPayerId] = useState(contacts[0]?.id || '1');
+  const [selectedPayerId, setSelectedPayerId] = useState(contacts[0]?.id || 'custom');
+  const [customPayer, setCustomPayer] = useState('');
   const [requestAmount, setRequestAmount] = useState('15,00');
-  const [requestReason, setRequestReason] = useState('Courses');
+  const [requestReason, setRequestReason] = useState('Remboursement');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const selectedPayer = contacts.find((c) => c.id === selectedPayerId) || contacts[0];
+  const selectedPayer =
+    contacts.find((c) => c.id === selectedPayerId) || {
+      name: customPayer.trim() || 'Contact',
+      phone: customPayer.trim(),
+      email: customPayer.trim().includes('@') ? customPayer.trim() : '',
+      rawPhone: customPayer.trim(),
+      initials: (customPayer.trim() || 'CO').slice(0, 2).toUpperCase(),
+    };
 
   const handleRequestSubmit = async (e) => {
     e.preventDefault();
@@ -42,8 +50,14 @@ export default function ReceiveScreen() {
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto no-scrollbar">
-      {/* Top Header */}
-      <Header />
+      {/* Top Header with Back Button */}
+      <Header
+        showBack
+        onBack={() => {
+          if (navigateToTab) navigateToTab('home');
+          else setCurrentScreen('HOME');
+        }}
+      />
 
       <div className="px-5 py-3 flex flex-col gap-4">
         {/* Segmented Control Tabs */}
@@ -83,15 +97,15 @@ export default function ReceiveScreen() {
 
               <div className="mt-4 flex flex-col items-center">
                 <span className="font-semibold text-[17px] text-[#0f1a1d]">
-                  {user.name}
+                  {user?.name || 'Mon Compte'}
                 </span>
                 <span className="font-mono text-xs text-[#55636a] mt-0.5 tracking-wider">
-                  {user.phone}
+                  {user?.phone || ''}
                 </span>
               </div>
 
               <p className="text-xs text-[#55636a] mt-3 max-w-[270px] leading-relaxed">
-                Faites scanner ce code : l'argent arrive sur votre compte {user.bankLabel || 'Banque Démo'} {user.accountMasked ? user.accountMasked.slice(-8) : '•••• 0142'}.
+                Faites scanner ce code : l&apos;argent arrive sur votre compte {user?.bankLabel || 'Compte Orbe'} {user?.accountMasked ? user.accountMasked.slice(-8) : '•••• 0142'}.
               </p>
             </div>
 
@@ -131,18 +145,43 @@ export default function ReceiveScreen() {
               >
                 À qui demander ?
               </label>
-              <select
-                id="payer-select"
-                value={selectedPayerId}
-                onChange={(e) => setSelectedPayerId(e.target.value)}
-                className="w-full bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl px-3 py-2.5 text-sm font-medium text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b]"
-              >
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.phone})
-                  </option>
-                ))}
-              </select>
+              {contacts.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  <select
+                    id="payer-select"
+                    value={selectedPayerId}
+                    onChange={(e) => setSelectedPayerId(e.target.value)}
+                    className="w-full bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl px-3 py-2.5 text-sm font-medium text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b]"
+                  >
+                    {contacts.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.phone})
+                      </option>
+                    ))}
+                    <option value="custom">Autre destinataire (saisir ci-dessous)</option>
+                  </select>
+
+                  {selectedPayerId === 'custom' && (
+                    <input
+                      type="text"
+                      value={customPayer}
+                      onChange={(e) => setCustomPayer(e.target.value)}
+                      placeholder="Numéro de mobile ou email"
+                      required
+                      className="w-full bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl px-3 py-2 text-sm text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b]"
+                    />
+                  )}
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  value={customPayer}
+                  onChange={(e) => setCustomPayer(e.target.value)}
+                  placeholder="+33 6 12 34 56 78 ou email"
+                  required
+                  className="w-full bg-[#f5f6f4] border border-[#d5dcdf] rounded-xl px-3 py-2.5 text-sm font-medium text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b]"
+                />
+              )}
             </div>
 
             <div>

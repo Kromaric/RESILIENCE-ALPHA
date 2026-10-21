@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { useApp } from '../context/useApp';
 
 /**
@@ -7,7 +7,7 @@ import { useApp } from '../context/useApp';
  * No emojis used.
  */
 export default function Header({ showBack = false, onBack = null }) {
-  const { currentScreen, isIncident, setCurrentScreen } = useApp();
+  const { currentScreen, isIncident, setCurrentScreen, navigateToTab } = useApp();
 
   // Determine header title based on current screen
   let title = 'orbe';
@@ -28,7 +28,11 @@ export default function Header({ showBack = false, onBack = null }) {
     } else if (currentScreen === 'VERIFY') {
       setCurrentScreen('SEND_CONTACT');
     } else if (currentScreen === 'SEND_CONTACT') {
-      setCurrentScreen('HOME');
+      if (navigateToTab) navigateToTab('home');
+      else setCurrentScreen('HOME');
+    } else if (currentScreen === 'ACTIVITY' || currentScreen === 'RECEIVE') {
+      if (navigateToTab) navigateToTab('home');
+      else setCurrentScreen('HOME');
     }
   };
 
@@ -58,8 +62,9 @@ export default function Header({ showBack = false, onBack = null }) {
 
       <div>
         {currentScreen === 'LOGIN' || currentScreen === 'REGISTER' ? (
-          <span className="bg-[#dcecef] text-[#0a4552] rounded px-2 py-0.5 text-xs font-medium">
-            Démo
+          <span className="bg-[#dcecef] text-[#0a4552] rounded-full px-2.5 py-0.5 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Sécurisé</span>
           </span>
         ) : isIncident ? (
           <span className="bg-[#3d1714] text-[#f47066] rounded-full px-2.5 py-0.5 text-xs font-medium inline-flex items-center gap-1.5 shadow-xs">

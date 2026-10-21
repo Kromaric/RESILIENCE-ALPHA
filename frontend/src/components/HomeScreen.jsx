@@ -25,7 +25,7 @@ export default function HomeScreen() {
           <div>
             <p className="text-[#55636a] text-sm">Bonjour</p>
             <h1 className="text-2xl font-semibold text-[#0f1a1d] tracking-tight">
-              {user.name}
+              {user?.name || 'Mon Compte'}
             </h1>
           </div>
           <button
@@ -49,12 +49,12 @@ export default function HomeScreen() {
               Compte lié
             </span>
             <span className="bg-[#dcecef] text-[#0a4552] rounded px-1.5 py-0.5 text-xs font-medium">
-              {user.bankLabel || 'Banque Démo'}
+              {user?.bankLabel || 'Compte Orbe'}
             </span>
           </div>
 
           <div className="font-mono text-[15px] tracking-wider font-medium">
-            {user.accountMasked || 'FR76 •••• •••• 0142'}
+            {user?.accountMasked || 'FR76 •••• •••• 0142'}
           </div>
 
           <p className="text-[13px] opacity-85 leading-snug m-0">
@@ -123,51 +123,49 @@ export default function HomeScreen() {
           </div>
 
           <div className="flex flex-col gap-2">
-            {recentTransactions.map((tx) => (
-              <div
-                key={tx.id}
-                className="bg-white border border-[#d5dcdf] rounded-xl p-3.5 flex items-center justify-between shadow-2xs hover:border-[#7f8c93] transition-colors select-none"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-[#dcecef] text-[#0a4552] font-semibold text-xs flex items-center justify-center shrink-0">
-                    {tx.initials}
+            {recentTransactions.length > 0 ? (
+              recentTransactions.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="bg-white border border-[#d5dcdf] rounded-xl p-3.5 flex items-center justify-between shadow-2xs hover:border-[#7f8c93] transition-colors select-none"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-[#dcecef] text-[#0a4552] font-semibold text-xs flex items-center justify-center shrink-0">
+                      {tx.initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-[#0f1a1d] truncate m-0 text-sm">
+                        {tx.counterparty}
+                      </p>
+                      <p className="text-xs text-[#55636a] truncate m-0 mt-0.5">
+                        {tx.subtitle}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-medium text-[#0f1a1d] truncate m-0 text-sm">
-                      {tx.counterparty}
-                    </p>
-                    <p className="text-xs text-[#55636a] truncate m-0 mt-0.5">
-                      {tx.subtitle}
-                    </p>
-                  </div>
-                </div>
 
-                <div className="text-right shrink-0">
-                  <p
-                    className={`font-mono font-medium text-sm m-0 ${
-                      tx.isFailed
-                        ? 'text-[#55636a]'
-                        : tx.type === 'received'
-                        ? 'text-[#1e7a45]'
-                        : 'text-[#0f1a1d]'
-                    }`}
-                  >
-                    {tx.amountFormatted}
-                  </p>
-                  <span
-                    className={`text-[11px] font-medium ${
-                      tx.isFailed
-                        ? 'text-[#c81e1e]'
-                        : tx.type === 'refund'
-                        ? 'text-[#55636a]'
-                        : 'text-[#1e7a45]'
-                    }`}
-                  >
-                    {tx.status}
-                  </span>
+                  <div className="text-right shrink-0">
+                    <p
+                      className={`font-mono font-medium text-sm m-0 ${
+                        tx.isFailed
+                          ? 'text-[#55636a]'
+                          : tx.type === 'received'
+                          ? 'text-[#1e7a45]'
+                          : 'text-[#0f1a1d]'
+                      }`}
+                    >
+                      {tx.amountFormatted}
+                    </p>
+                    <p className="text-[11px] text-[#55636a] m-0 mt-0.5">
+                      <span aria-hidden="true">{tx.statusSymbol}</span> {tx.status}
+                    </p>
+                  </div>
                 </div>
+              ))
+            ) : (
+              <div className="bg-white border border-[#d5dcdf] rounded-xl p-5 text-center text-xs text-[#55636a] shadow-2xs">
+                Aucune transaction pour le moment.
               </div>
-            ))}
+            )}
           </div>
         </section>
       </div>

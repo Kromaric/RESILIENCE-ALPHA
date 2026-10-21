@@ -10,7 +10,7 @@ import { useApp } from '../context/useApp';
  * No emojis used.
  */
 export default function ActivityScreen() {
-  const { transactions, activityFilter, setActivityFilter } = useApp();
+  const { transactions, activityFilter, setActivityFilter, navigateToTab, setCurrentScreen } = useApp();
 
   const filterPills = [
     { id: 'all', label: 'Tout' },
@@ -37,8 +37,14 @@ export default function ActivityScreen() {
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto no-scrollbar">
-      {/* Top Header */}
-      <Header />
+      {/* Top Header with Back to Home button */}
+      <Header
+        showBack
+        onBack={() => {
+          if (navigateToTab) navigateToTab('home');
+          else setCurrentScreen('HOME');
+        }}
+      />
 
       <div className="px-5 py-3 flex flex-col gap-4">
         {/* Filter Pills Bar */}
@@ -152,15 +158,15 @@ export default function ActivityScreen() {
 
           {filteredTransactions.length === 0 && (
             <div className="bg-white border border-[#d5dcdf] rounded-xl p-8 text-center text-xs text-[#55636a] shadow-xs">
-              Aucune transaction pour ce filtre.
+              Aucune transaction pour le moment.
             </div>
           )}
         </div>
 
         {/* Footer Note */}
-        <div className="text-center py-3 select-none">
-          <p className="text-xs text-[#55636a]">Données fictives de démonstration</p>
-        </div>
+        <p className="text-xs text-[#55636a] text-center leading-relaxed px-4 pt-1">
+          Les virements instantanés sont définitifs et confirmés par votre banque.
+        </p>
       </div>
     </div>
   );

@@ -4,7 +4,7 @@
  * No emojis used.
  */
 export default function QrCodeSvg({ size = 200, className = '' }) {
-  // 21x21 standard QR grid matrix representation for Camille Test
+  // 21x21 standard QR grid matrix representation for Orbe
   const grid = [
     [1,1,1,1,1,1,1,0,1,0,1,1,0,0,1,1,1,1,1,1,1],
     [1,0,0,0,0,0,1,0,0,1,0,1,1,0,1,0,0,0,0,0,1],

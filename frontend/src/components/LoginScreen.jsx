@@ -1,26 +1,30 @@
 import { useState } from 'react';
-import { LogIn, UserPlus, AlertCircle, Sparkles } from 'lucide-react';
+import { LogIn, UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
 import Header from './Header';
 import { useApp } from '../context/useApp';
 
 /**
  * Screen 1: User Login Screen.
- * Allows user to log in with email and password to any registered account,
- * or quickly fill demo credentials (Camille Test).
+ * Allows user to log in with email and password to any registered account.
  * Leads to Biometric 2FA (FACE_AUTH) or Biometric Enrollment (FACE_ENROLL) depending on account state.
  * No emojis used.
  */
 export default function LoginScreen() {
-  const { start2FALogin, setCurrentScreen } = useApp();
+  const { start2FALogin, setCurrentScreen, loginNotice, setLoginNotice, prefilledEmail } = useApp();
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => prefilledEmail || '');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
+
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
+    if (setLoginNotice) {
+      setLoginNotice('');
+    }
 
     if (!email.trim() || !password) {
       setErrorMessage('Veuillez saisir votre email et votre mot de passe.');
@@ -42,12 +46,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleFillDemoCamille = () => {
-    setEmail('camille@orbe.test');
-    setPassword('demo-password');
-    setErrorMessage('');
-  };
-
   return (
     <div className="flex-1 flex flex-col justify-between overflow-y-auto no-scrollbar pb-6 select-none">
       {/* Top Header */}
@@ -66,21 +64,17 @@ export default function LoginScreen() {
           </p>
         </div>
 
-        {/* Demo Fast-fill Shortcut */}
-        <div className="px-6 mt-3">
-          <button
-            type="button"
-            onClick={handleFillDemoCamille}
-            className="w-full py-1.5 px-3 rounded-xl bg-[#dcecef]/50 border border-[#0e5a6b]/20 hover:bg-[#dcecef] text-[#0a4552] text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-[#0e5a6b]" />
-            <span>Remplir compte démo (Camille Test)</span>
-          </button>
-        </div>
+        {/* Notice after registration */}
+        {loginNotice && (
+          <div className="mx-6 mt-3 p-3 rounded-xl bg-[#def2e5] border border-[#a3e0b6] text-[#1e7a45] text-xs flex items-center gap-2 shadow-2xs">
+            <CheckCircle className="w-4 h-4 shrink-0 text-[#1e7a45]" />
+            <span>{loginNotice}</span>
+          </div>
+        )}
 
         {/* Error Feedback */}
         {errorMessage && (
-          <div className="mx-6 mt-3 p-2.5 rounded-xl bg-[#fde8e8] border border-[#f8b4b4] text-[#c81e1e] text-xs flex items-center gap-2">
+          <div className="mx-6 mt-3 p-2.5 rounded-xl bg-[#fde8e8] border border-[#f8b4b4] text-[#c81e1e] text-xs flex items-center gap-2 shadow-2xs">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{errorMessage}</span>
           </div>
@@ -95,9 +89,12 @@ export default function LoginScreen() {
             <input
               type="email"
               required
-              placeholder="ex: votre-email@orbe.test"
+              placeholder="votre-email@orbe.test"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (loginNotice && setLoginNotice) setLoginNotice('');
+              }}
               className="w-full h-11 px-3.5 rounded-xl bg-white border border-[#d5dcdf] text-sm text-[#0f1a1d] placeholder-[#9aa5aa] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b] transition-all shadow-2xs"
             />
           </div>
@@ -133,7 +130,10 @@ export default function LoginScreen() {
           <span className="text-[#55636a]">Nouveau sur Orbe ?</span>
           <button
             type="button"
-            onClick={() => setCurrentScreen('REGISTER')}
+            onClick={() => {
+              if (setLoginNotice) setLoginNotice('');
+              setCurrentScreen('REGISTER');
+            }}
             className="text-[#0e5a6b] font-semibold hover:underline cursor-pointer inline-flex items-center gap-1"
           >
             <UserPlus className="w-3.5 h-3.5" />
