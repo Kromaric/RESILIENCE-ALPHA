@@ -1,0 +1,51 @@
+# Orbe — assistant opérateur, partie PC Hôte (CADRAGE §4.8). Inclus par infra/docker-compose.yml.
+# Le modèle tourne sur la VM dédiée : infra/ollama/ (Ollama + proxy à jeton).
+#
+# Prérequis : secrets/rag_api_key et secrets/ollama_token (scripts/init_dev_secrets.py), et
+# infra/.env avec au moins RAG_OLLAMA_BASE_URL=http://<ip-vm>:11434 (voir infra/rag.env.example).
+#
+# Seul :   docker compose -f infra/docker-compose.rag.yml up -d --build
+# Test :   voir services/assistant-rag/README.md
+
+services:
+  # API de l'assistant. Lecture seule : corpus monté en ro, aucun accès au moteur de
+  # remédiation, au socket Docker, à Vault ni à MariaDB.
+  assistant-rag:
+    build: { context: .., dockerfile: dockerfiles/Dockerfile-assistant-rag }
+    image: orbe/assistant-rag:0.1.0
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    environment:
+      # Adresse non renseignée : l'assistant démarre mais reste « indexing » (voir /health/ready),
+      # sans bloquer le reste de la pile
+      RAG_OLLAMA_BASE_URL: ${RAG_OLLAMA_BASE_URL:-http://ollama-vm.invalid:11434}
+      RAG_LLM_MODEL: ${RAG_LLM_MODEL:-qwen2.5:7b}
+      RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-nomic-embed-text}
+      RAG_REASONING: ${RAG_REASONING:-}            # « false » pour qwen3
+      RAG_LLM_TIMEOUT_SECONDS: ${RAG_LLM_TIMEOUT_SECONDS:-150}
+      RAG_MIN_RELEVANCE: ${RAG_MIN_RELEVANCE:-0.66}
+      RAG_ENABLE_DOCS: ${RAG_ENABLE_DOCS:-false}
+      RAG_LOG_LEVEL: INFO
+    secrets: [rag_api_key, ollama_token]
+    volumes:
+      - ../docs:/corpus:ro              # corpus : mettre à jour docs/ puis redémarrer le conteneur
+      - rag-index:/data                 # index ChromaDB, reconstruit si docs/ a changé
+    networks: [rag]
+    ports:
+      - "127.0.0.1:8005:8005"           # PC Hôte uniquement (dashboard, tests) ; jamais le hotspot
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
+
+networks:
+  rag: {}   # non interne : doit joindre la VM Ollama sur le réseau local
+
+volumes:
+  rag-index:
+
+secrets:
+  rag_api_key:  { file: ../secrets/rag_api_key }
+  ollama_token: { file: ../secrets/ollama_token }
