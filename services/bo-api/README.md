@@ -125,6 +125,10 @@ toutes les 30 s pour `series`, `resources` et `/bo/data/*`.
 | `BO_LATENCY_THRESHOLD_MS` / `BO_ERROR_RATE_THRESHOLD` / `BO_ANOMALY_THRESHOLD` | `800` / `0.02` / `0.80` |
 | `BO_DISPLAY_TIMEZONE` | `Europe/Paris` (heures des courbes et des journaux) |
 | `BO_CORS_ORIGINS` | `[]` |
+| `BO_VAULT_KV_PATH` | vide : secrets lus dans `/run/secrets/` ; démonstration : `secret/data/oorbe/config` |
+| `BO_VAULT_ADDR` / `BO_VAULT_TOKEN_FILE` | `http://vault:8200` / `/run/secrets/vault_token` (jeton en lecture seule) |
+| `BO_VAULT_ROLE_ID_FILE` / `BO_VAULT_SECRET_ID_FILE` | AppRole, prioritaire sur le jeton s'ils existent |
+| `BO_DB_PASSWORD_KEY` | `bo_db_password` : nom de la clé dans Vault (repli : fichier de secret) |
 | `BO_ENABLE_DOCS` | `false` (Swagger sur `/docs` si `true`) |
 
 ## Développement

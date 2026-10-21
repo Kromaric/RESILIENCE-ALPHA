@@ -79,6 +79,10 @@ n'est pas accepté par payment-service.
 | `AUTH_PENDING_2FA_SECONDS` | `120` |
 | `AUTH_LOCKOUT_THRESHOLD` / `AUTH_LOCKOUT_MINUTES` | `5` / `10` |
 | `AUTH_LOGIN_RATE_PER_IP` / `AUTH_REGISTER_RATE_PER_IP` | `20` / `5` |
+| `AUTH_VAULT_KV_PATH` | vide : secrets lus dans `/run/secrets/` ; démonstration : `secret/data/oorbe/config` |
+| `AUTH_VAULT_ADDR` / `AUTH_VAULT_TOKEN_FILE` | `http://vault:8200` / `/run/secrets/auth_vault_token` (jeton en lecture seule) |
+| `AUTH_VAULT_ROLE_ID_FILE` / `AUTH_VAULT_SECRET_ID_FILE` | AppRole, prioritaire sur le jeton s'ils existent |
+| `AUTH_DB_PASSWORD_KEY` / `AUTH_FACE_KEY_NAME` | `auth_db_password` / `face_embedding_key` : noms de la clé dans Vault (repli : fichier de secret) |
 | `AUTH_ENABLE_DOCS` | `false` (Swagger sur `/docs` si `true`) |
 
 ## Développement

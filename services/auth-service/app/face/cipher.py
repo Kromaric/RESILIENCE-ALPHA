@@ -9,7 +9,6 @@ ne se déchiffre pas (données associées AES-GCM, ou contexte de dérivation Va
 
 import base64
 import os
-from pathlib import Path
 from typing import Protocol
 
 import httpx
@@ -46,8 +45,9 @@ class LocalCipher:
         self._aead = AESGCM(key)
 
     @classmethod
-    def from_file(cls, path: Path) -> "LocalCipher":
-        return cls(bytes.fromhex(path.read_text(encoding="utf-8").strip()))
+    def from_hex(cls, key_hex: str) -> "LocalCipher":
+        """Clé de 32 octets en hexadécimal (fichier de secret ou Vault)."""
+        return cls(bytes.fromhex(key_hex.strip()))
 
     async def encrypt(self, embedding: np.ndarray, owner_id: str) -> str:
         nonce = os.urandom(12)

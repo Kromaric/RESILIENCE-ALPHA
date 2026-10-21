@@ -79,6 +79,10 @@ chaque compte = Σ crédits − Σ débits, aucun compte client négatif.
 | `PAYMENT_SESSION_CACHE_SECONDS` | `5.0` (délai maximal de prise en compte d'une révocation) |
 | `PAYMENT_AUTHORIZATION_MIN_MS` / `_MAX_MS` | `50` / `150` |
 | `PAYMENT_RECONCILE_ENABLED` / `_AFTER_SECONDS` / `_INTERVAL_SECONDS` | `true` / `30` / `15` |
+| `PAYMENT_VAULT_KV_PATH` | vide : secrets lus dans `/run/secrets/` ; démonstration : `secret/data/oorbe/config` |
+| `PAYMENT_VAULT_ADDR` / `PAYMENT_VAULT_TOKEN_FILE` | `http://vault:8200` / `/run/secrets/vault_token` (jeton en lecture seule) |
+| `PAYMENT_VAULT_ROLE_ID_FILE` / `PAYMENT_VAULT_SECRET_ID_FILE` | AppRole, prioritaire sur le jeton s'ils existent |
+| `PAYMENT_DB_PASSWORD_KEY` | `payment_db_password` : nom de la clé dans Vault (repli : fichier de secret) |
 | `PAYMENT_ENABLE_DOCS` | `false` (Swagger sur `/docs` si `true`) |
 
 ## Développement
