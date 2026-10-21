@@ -1,6 +1,6 @@
 # Assistant opérateur (assistant-rag ; le modèle tourne sur la VM Ollama, infra/ollama/) : inclus ici.
-#include:
-#  - docker-compose.rag.yml
+include:
+  - docker-compose.rag.yml
 
 services:
   prometheus:
@@ -152,10 +152,10 @@ services:
   oorbe-dashboard:
     build:
       context: ..
-      dockerfile: ./dockerfiles/Dockerfile-interface
-    container_name: oorbe-interface
-    expose:
-      - "8080"
+      dockerfile: ./dockerfiles/Dockerfile-dashboard
+    container_name: oorbe-dashboard
+    ports:
+      - "8083:8083"
     restart: unless-stopped
 
   oorbe-interface:
@@ -163,8 +163,8 @@ services:
       context: ..
       dockerfile: ./dockerfiles/Dockerfile-interface
     container_name: oorbe-interface
-    expose:
-      - "8081"
+    ports:
+      - "8081:8081"
     restart: unless-stopped
 
   oorbe-bo-api:
