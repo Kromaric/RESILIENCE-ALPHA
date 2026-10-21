@@ -46,6 +46,19 @@ services:
     depends_on:
       - loki
 
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    ports:
+      - "8088:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: unless-stopped
+    privileged: true
+
   grafana:
     image: grafana/grafana-oss:latest
     container_name: grafana
@@ -130,7 +143,6 @@ services:
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    mem_limit: 256m
     restart: unless-stopped
 
 
