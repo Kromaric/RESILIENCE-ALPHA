@@ -1,45 +1,41 @@
 # -----------------------------------------------------------------------------
-# Étape 1 : Construction de l'application React + Tailwind (Stage 1)
+# Dashboard de supervision (back-office) — contexte de build : racine du dépôt
+#   docker build -f dockerfiles/Dockerfile-dashboard -t orbe/dashboard .
+# La page Documentation embarque docs/ au build : Dockerfile-dashboard.dockerignore
+# remplace le .dockerignore de la racine pour l'autoriser.
 # -----------------------------------------------------------------------------
+
+# Étape 1 : construction de l'application React (Vite)
 FROM node:20-alpine AS builder
 
-WORKDIR /app
+WORKDIR /app/dashboard
 
-# Copie des fichiers de dépendances pour maximiser l'utilisation du cache Docker
-COPY package*.json ./
+# Dépendances d'abord, pour profiter du cache Docker
+COPY dashboard/package*.json ./
+RUN npm ci --no-audit --no-fund
 
-# Installation des dépendances (y compris Tailwind CSS)
-RUN npm ci
-
-# Copie du  code source
-COPY . .
-
-# Compilation de l'application pour la production (génère le dossier /app/dist ou /app/build)
+# Code source, et la documentation lue au build (../docs depuis dashboard/)
+COPY dashboard/ ./
+COPY docs/ /app/docs/
 RUN npm run build
 
 
-# -----------------------------------------------------------------------------
-# Étape 2 : Image de production avec Nginx sur le port 8080 (Stage 2)
-# -----------------------------------------------------------------------------
-FROM nginx:alpine AS runner
+# Étape 2 : Nginx non root (uid 101), port 8080
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS runner
 
-# Copie d'une configuration Nginx sur mesure pour écouter sur le port 8080 et gérer le SPA routing
 RUN echo 'server { \
     listen 8080; \
     server_name localhost; \
+    server_tokens off; \
     location / { \
         root /usr/share/nginx/html; \
-        index index.html index.htm; \
+        index index.html; \
         try_files $uri $uri/ /index.html; \
     } \
 }' > /etc/nginx/conf.d/default.conf
 
-# Copie des fichiers compilés depuis l'étape de build
-# Remarque : Si vous utilisez Create React App au lieu de Vite, remplacez '/app/dist' par '/app/build'
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dashboard/dist /usr/share/nginx/html
 
-# Exposition du port 8081
-EXPOSE 8081
+EXPOSE 8080
 
-# Démarrage de Nginx en arrière-plan
 CMD ["nginx", "-g", "daemon off;"]
