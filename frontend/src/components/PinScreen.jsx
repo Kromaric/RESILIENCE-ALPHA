@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Delete } from 'lucide-react';
+import { Delete, UserPlus } from 'lucide-react';
 import Header from './Header';
 import { useApp } from '../context/useApp';
 
@@ -9,7 +9,7 @@ import { useApp } from '../context/useApp';
  * No emojis used.
  */
 export default function PinScreen() {
-  const { handleLogin } = useApp();
+  const { handleLogin, setCurrentScreen } = useApp();
   const [pin, setPin] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
@@ -131,18 +131,29 @@ export default function PinScreen() {
         </div>
       </div>
 
-      {/* Footer Info & Forgot code link */}
-      <div className="px-6 text-center mt-6 flex flex-col gap-1.5">
-        <button
-          type="button"
-          onClick={() => {
-            setPin('');
-            handleLogin('000000');
-          }}
-          className="text-xs text-[#0e5a6b] font-medium hover:underline self-center cursor-pointer"
-        >
-          Code oublié ?
-        </button>
+      {/* Footer Info & Links */}
+      <div className="px-6 text-center mt-6 flex flex-col gap-2">
+        <div className="flex items-center justify-center gap-4 text-xs font-medium">
+          <button
+            type="button"
+            onClick={() => {
+              setPin('');
+              handleLogin('000000');
+            }}
+            className="text-[#0e5a6b] hover:underline cursor-pointer"
+          >
+            Code oublié ?
+          </button>
+          <span className="text-[#d5dcdf]">|</span>
+          <button
+            type="button"
+            onClick={() => setCurrentScreen('REGISTER')}
+            className="text-[#0e5a6b] hover:underline cursor-pointer inline-flex items-center gap-1"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Créer un compte</span>
+          </button>
+        </div>
         <p className="text-[12px] text-[#55636a] leading-tight">
           3 essais. Ensuite, le compte est bloqué 10 min.
         </p>

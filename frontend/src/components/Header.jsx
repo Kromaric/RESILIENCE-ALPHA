@@ -15,9 +15,11 @@ export default function Header({ showBack = false, onBack = null }) {
   else if (currentScreen === 'VERIFY') title = 'Vérifier';
   else if (currentScreen === 'RECEIVE') title = 'Recevoir';
   else if (currentScreen === 'ACTIVITY') title = 'Activité';
+  else if (currentScreen === 'REGISTER') title = 'orbe';
   else if (currentScreen === 'HOME' || currentScreen === 'PIN') title = 'orbe';
 
-  const isHomeOrPin = currentScreen === 'HOME' || currentScreen === 'PIN';
+  const isHomeOrPinOrRegister =
+    currentScreen === 'HOME' || currentScreen === 'PIN' || currentScreen === 'REGISTER';
 
   const handleBackClick = () => {
     if (onBack) {
@@ -44,7 +46,7 @@ export default function Header({ showBack = false, onBack = null }) {
         )}
         <h1
           className={
-            isHomeOrPin
+            isHomeOrPinOrRegister
               ? 'text-[24px] font-semibold text-[#0e5a6b] tracking-tight'
               : 'text-[20px] font-semibold text-[#0f1a1d]'
           }
@@ -54,7 +56,7 @@ export default function Header({ showBack = false, onBack = null }) {
       </div>
 
       <div>
-        {currentScreen === 'PIN' ? (
+        {currentScreen === 'PIN' || currentScreen === 'REGISTER' ? (
           <span className="bg-[#dcecef] text-[#0a4552] rounded px-2 py-0.5 text-xs font-medium">
             Démo
           </span>

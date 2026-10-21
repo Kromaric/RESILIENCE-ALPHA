@@ -76,6 +76,35 @@ export async function checkBackendHealth() {
  * @param {string} password
  * @returns {Promise<{ mfa_required: boolean, session_id: string, face_challenge?: { direction: string, frames: number, interval_ms: number }, token?: { access_token: string, expires_in: number, factors: string[] }, face_enrollment_required?: boolean }>}
  */
+/**
+ * Register a new user account against /register.
+ *
+ * @param {{ email: string, phone: string, display_name: string, password: string }} userData
+ * @returns {Promise<{ client_id: string, email: string, phone_masked: string, display_name: string }>}
+ */
+export async function registerUser({ email, phone, display_name, password }) {
+  const res = await fetchWithTimeout(`${AUTH_URL}/register`, {
+    method: 'POST',
+    body: JSON.stringify({
+      email,
+      phone,
+      display_name,
+      password,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const message = err.detail?.message || "Échec de l'inscription";
+    const errorObj = new Error(message);
+    errorObj.code = err.detail?.code || 'registration_failed';
+    errorObj.status = res.status;
+    throw errorObj;
+  }
+
+  return await res.json();
+}
+
 export async function loginWithPassword(email, password) {
   const res = await fetchWithTimeout(`${AUTH_URL}/login`, {
     method: 'POST',

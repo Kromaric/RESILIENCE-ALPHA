@@ -1,6 +1,7 @@
 import { AppProvider } from './context/AppContext';
 import { useApp } from './context/useApp';
 import PinScreen from './components/PinScreen';
+import RegisterScreen from './components/RegisterScreen';
 import FaceAuthScreen from './components/FaceAuthScreen';
 import FaceEnrollScreen from './components/FaceEnrollScreen';
 import HomeScreen from './components/HomeScreen';
@@ -27,6 +28,7 @@ function MobileApp() {
       >
         {/* Active Screen Rendering */}
         {currentScreen === 'PIN' && <PinScreen />}
+        {currentScreen === 'REGISTER' && <RegisterScreen />}
         {currentScreen === 'FACE_AUTH' && <FaceAuthScreen />}
         {currentScreen === 'FACE_ENROLL' && <FaceEnrollScreen />}
         {currentScreen === 'HOME' && <HomeScreen />}
@@ -35,8 +37,11 @@ function MobileApp() {
         {currentScreen === 'RECEIVE' && <ReceiveScreen />}
         {currentScreen === 'ACTIVITY' && <ActivityScreen />}
 
-        {/* Bottom Navigation Bar (visible on dashboard views, hidden on PIN and Face Auth/Enroll) */}
-        {currentScreen !== 'PIN' && currentScreen !== 'FACE_AUTH' && currentScreen !== 'FACE_ENROLL' && <BottomNav />}
+        {/* Bottom Navigation Bar (visible on dashboard views, hidden on auth/enroll screens) */}
+        {currentScreen !== 'PIN' &&
+          currentScreen !== 'REGISTER' &&
+          currentScreen !== 'FACE_AUTH' &&
+          currentScreen !== 'FACE_ENROLL' && <BottomNav />}
       </main>
 
       {/* Floating Demo Resilience Controls */}
