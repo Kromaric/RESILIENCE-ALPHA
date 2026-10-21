@@ -7,7 +7,7 @@ from app.security import SessionGuard
 # --- Sessions et second facteur ----------------------------------------------------
 
 
-def test_moving_money_requires_a_passkey_session(add_client, pay, auth, client):
+def test_moving_money_requires_a_face_session(add_client, pay, auth, client):
     camille, lea = add_client(), add_client()
     password_only = auth(camille, factors=("pwd",))
 

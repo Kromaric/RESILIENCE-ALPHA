@@ -41,6 +41,10 @@ docker compose -f docker-compose.dev.yml up -d --build
 | payment-service (Swagger) | http://localhost:8002/docs |
 | MariaDB (client SQL) | `localhost:3307`, base `orbe` ; mot de passe root dans `secrets/db_root_password` |
 
+Les images sont construites à partir de `dockerfiles/` (contexte : racine du dépôt) :
+`Dockerfile-auth`, `Dockerfile-payment` et `Dockerfile-mariadb` (schéma, comptes et configuration
+intégrés). Ce sont les mêmes que dans la pile complète `infra/docker-compose.yml`.
+
 ### Comptes de démo
 
 Mot de passe commun : `demo-password`.
@@ -68,8 +72,9 @@ docker compose -f docker-compose.dev.yml exec mariadb sh -c 'MYSQL_PWD="$(cat /r
 
 ### Tester dans Swagger
 
-Déplacer de l'argent exige une session confirmée par **passkey**. Sans navigateur ni téléphone, ce
-script la simule (authentificateur logiciel des tests) et affiche un jeton valable 15 minutes :
+Déplacer de l'argent exige une session confirmée par **reconnaissance faciale**. En local, auth-service
+utilise un moteur de visage simulé (`AUTH_FACE_ENGINE=fake`) : ce script enregistre un visage fictif
+au premier appel, répond au défi de vivacité et affiche un jeton valable 15 minutes :
 
 ```bash
 services/auth-service/.venv/Scripts/python scripts/dev_token.py camille@orbe.test
@@ -86,7 +91,12 @@ Autres essais utiles :
 - cartes refusées : `4000 0000 0000 0002`, `…0069` (expirée), `…9995` (fonds insuffisants) ;
 - une connexion par mot de passe seul (`POST /login` dans http://localhost:8001/docs) donne un jeton
   refusé pour payer (`403 second_factor_required`) ;
+- un autre visage est refusé : `scripts/dev_token.py camille@orbe.test --face intrus`
+  (`401 second_factor_failed`, compte bloqué après 5 échecs) ;
 - jeton de la sonde : `scripts/dev_token.py probe@orbe.test --probe`.
+
+Pour essayer le vrai modèle (InsightFace, déjà dans l'image), passez `AUTH_FACE_ENGINE: insightface`
+et `mem_limit: 1g` dans `docker-compose.dev.yml` : il faut alors de vraies photos de la caméra.
 
 ### Arrêter, repartir de zéro
 
@@ -100,7 +110,8 @@ Pour effacer aussi la base (les données de démo sont rechargées au prochain d
 docker compose -f docker-compose.dev.yml down -v
 ```
 
-Après un `down -v`, supprimez aussi `secrets/dev-passkeys/` : les passkeys simulées n'existent plus en base.
+Après la mise à jour « reconnaissance faciale », un `down -v` est nécessaire (schéma modifié), et
+`scripts/init_dev_secrets.py` doit être relancé (nouveau secret `face_embedding_key`).
 
 ### Tests automatisés
 

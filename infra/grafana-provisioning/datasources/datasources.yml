@@ -1,0 +1,21 @@
+apiVersion: 1
+
+datasources:
+  # Configuration pour Prometheus
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true # Définit Prometheus comme source par défaut
+    jsonData:
+      httpMethod: POST
+    editable: true
+
+  # Configuration pour Loki
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      maxLines: 1000 # Limite par défaut pour le nombre de lignes de logs retournées
+    editable: true

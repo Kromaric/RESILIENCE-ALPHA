@@ -4,7 +4,7 @@ window.ORBE_SPECS = {
   "openapi": "3.1.0",
   "info": {
    "title": "Orbe — auth-service",
-   "description": "Authentification forte des clients Orbe : mot de passe puis passkey WebAuthn (biométrie vérifiée par l'appareil), sessions révocables (JWT RS256 de 15 min), applications clientes et clés d'API partenaires. Exposé par le WAF sous `/api/auth`. Erreurs : `{\"detail\": {\"code\", \"message\"}}`. Voir CADRAGE §4.2.",
+   "description": "Authentification forte des clients Orbe : mot de passe puis **reconnaissance faciale** (modèle InsightFace, test du vivant par rotation de la tête dans un sens tiré au hasard), sessions révocables (JWT RS256 de 15 min), applications clientes et clés d'API partenaires. Exposé par le WAF sous `/api/auth`. Erreurs : `{\"detail\": {\"code\", \"message\"}}`. Voir CADRAGE §4.2.",
    "version": "0.1.0"
   },
   "paths": {
@@ -14,7 +14,7 @@ window.ORBE_SPECS = {
       "Authentification"
      ],
      "summary": "Créer un compte",
-     "description": "Crée un compte client. Étape suivante : `POST /login`, puis enregistrer une passkey.\n\nHors périmètre du démonstrateur : vérification de l'email et du téléphone, KYC.",
+     "description": "Crée un compte client. Ensuite : `POST /login`, puis `POST /face/enroll` (visage).\n\nHors périmètre du démonstrateur : vérification de l'email et du téléphone, KYC.",
      "operationId": "register_register_post",
      "requestBody": {
       "content": {
@@ -185,18 +185,19 @@ window.ORBE_SPECS = {
      }
     }
    },
-   "/login/passkey": {
+   "/login/face": {
     "post": {
      "tags": [
       "Authentification"
      ],
-     "summary": "Se connecter — étape 2 : passkey (Face ID, Windows Hello)",
-     "operationId": "login_passkey_login_passkey_post",
+     "summary": "Se connecter — étape 2 : reconnaissance faciale",
+     "description": "Images filmées pendant que la tête tourne dans le sens indiqué par `face_challenge`.\n\nUn échec clôt la tentative (il faut recommencer `POST /login`, avec une nouvelle consigne)\net compte dans le blocage du compte, comme un mauvais mot de passe.",
+     "operationId": "login_face_login_face_post",
      "requestBody": {
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/PasskeyLoginRequest"
+         "$ref": "#/components/schemas/FaceLoginRequest"
         }
        }
       },
@@ -214,7 +215,17 @@ window.ORBE_SPECS = {
        }
       },
       "401": {
-       "description": "Passkey refusée ou session expirée",
+       "description": "Visage non reconnu, test du vivant échoué ou session expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Images invalides",
        "content": {
         "application/json": {
          "schema": {
@@ -233,12 +244,12 @@ window.ORBE_SPECS = {
         }
        }
       },
-      "422": {
-       "description": "Validation Error",
+      "503": {
+       "description": "Reconnaissance faciale indisponible",
        "content": {
         "application/json": {
          "schema": {
-          "$ref": "#/components/schemas/HTTPValidationError"
+          "$ref": "#/components/schemas/ErrorOut"
          }
         }
        }
@@ -370,149 +381,20 @@ window.ORBE_SPECS = {
      }
     }
    },
-   "/passkeys/register/options": {
-    "post": {
-     "tags": [
-      "Passkeys"
-     ],
-     "summary": "Préparer l'enregistrement d'une passkey",
-     "description": "Options à passer à `navigator.credentials.create()`.",
-     "operationId": "registration_options_passkeys_register_options_post",
-     "responses": {
-      "200": {
-       "description": "Successful Response",
-       "content": {
-        "application/json": {
-         "schema": {
-          "additionalProperties": true,
-          "type": "object",
-          "title": "Response Registration Options Passkeys Register Options Post"
-         }
-        }
-       }
-      },
-      "401": {
-       "description": "Session invalide ou expirée",
-       "content": {
-        "application/json": {
-         "schema": {
-          "$ref": "#/components/schemas/ErrorOut"
-         }
-        }
-       }
-      },
-      "403": {
-       "description": "Session sans passkey alors que le compte en a",
-       "content": {
-        "application/json": {
-         "schema": {
-          "$ref": "#/components/schemas/ErrorOut"
-         }
-        }
-       }
-      }
-     },
-     "security": [
-      {
-       "HTTPBearer": []
-      }
-     ]
-    }
-   },
-   "/passkeys/register": {
-    "post": {
-     "tags": [
-      "Passkeys"
-     ],
-     "summary": "Enregistrer la passkey de cet appareil",
-     "operationId": "register_passkeys_register_post",
-     "requestBody": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/PasskeyRegisterRequest"
-        }
-       }
-      },
-      "required": true
-     },
-     "responses": {
-      "201": {
-       "description": "Successful Response",
-       "content": {
-        "application/json": {
-         "schema": {
-          "$ref": "#/components/schemas/PasskeyOut"
-         }
-        }
-       }
-      },
-      "401": {
-       "description": "Session invalide ou expirée",
-       "content": {
-        "application/json": {
-         "schema": {
-          "$ref": "#/components/schemas/ErrorOut"
-         }
-        }
-       }
-      },
-      "403": {
-       "description": "Session sans passkey alors que le compte en a",
-       "content": {
-        "application/json": {
-         "schema": {
-          "$ref": "#/components/schemas/ErrorOut"
-         }
-        }
-       }
-      },
-      "409": {
-       "description": "Aucun enregistrement en cours, ou passkey déjà connue",
-       "content": {
-        "application/json": {
-         "schema": {
-          "$ref": "#/components/schemas/ErrorOut"
-         }
-        }
-       }
-      },
-      "422": {
-       "description": "Réponse de l'appareil refusée",
-       "content": {
-        "application/json": {
-         "schema": {
-          "$ref": "#/components/schemas/ErrorOut"
-         }
-        }
-       }
-      }
-     },
-     "security": [
-      {
-       "HTTPBearer": []
-      }
-     ]
-    }
-   },
-   "/passkeys": {
+   "/face": {
     "get": {
      "tags": [
-      "Passkeys"
+      "Visage"
      ],
-     "summary": "Mes appareils",
-     "operationId": "list_passkeys_passkeys_get",
+     "summary": "Mon visage enregistré",
+     "operationId": "face_status_face_get",
      "responses": {
       "200": {
        "description": "Successful Response",
        "content": {
         "application/json": {
          "schema": {
-          "items": {
-           "$ref": "#/components/schemas/PasskeyOut"
-          },
-          "type": "array",
-          "title": "Response List Passkeys Passkeys Get"
+          "$ref": "#/components/schemas/FaceStatus"
          }
         }
        }
@@ -528,7 +410,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session sans passkey alors que le compte en a",
+       "description": "Session sans visage alors que le compte en a un",
        "content": {
         "application/json": {
          "schema": {
@@ -543,31 +425,14 @@ window.ORBE_SPECS = {
        "HTTPBearer": []
       }
      ]
-    }
-   },
-   "/passkeys/{passkey_id}": {
+    },
     "delete": {
      "tags": [
-      "Passkeys"
+      "Visage"
      ],
-     "summary": "Retirer un appareil",
-     "operationId": "delete_passkey_passkeys__passkey_id__delete",
-     "security": [
-      {
-       "HTTPBearer": []
-      }
-     ],
-     "parameters": [
-      {
-       "name": "passkey_id",
-       "in": "path",
-       "required": true,
-       "schema": {
-        "type": "string",
-        "title": "Passkey Id"
-       }
-      }
-     ],
+     "summary": "Supprimer mon visage (droit à l'effacement)",
+     "description": "Efface définitivement les gabarits et le consentement. La connexion repassera par\nl'enrôlement du visage.",
+     "operationId": "erase_face_delete",
      "responses": {
       "204": {
        "description": "Successful Response"
@@ -583,7 +448,54 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session sans passkey alors que le compte en a",
+       "description": "Session sans visage alors que le compte en a un",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/face/enroll": {
+    "post": {
+     "tags": [
+      "Visage"
+     ],
+     "summary": "Enregistrer (ou remplacer) mon visage",
+     "description": "Environ 16 images en tournant lentement la tête de gauche à droite. Seuls 3 à 5\ngabarits (embeddings) sont conservés, chiffrés ; aucune image n'est stockée.",
+     "operationId": "enroll_face_enroll_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FaceEnrollRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/FaceStatus"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
        "content": {
         "application/json": {
          "schema": {
@@ -592,8 +504,8 @@ window.ORBE_SPECS = {
         }
        }
       },
-      "404": {
-       "description": "Passkey inconnue",
+      "403": {
+       "description": "Session sans visage alors que le compte en a un",
        "content": {
         "application/json": {
          "schema": {
@@ -603,16 +515,31 @@ window.ORBE_SPECS = {
        }
       },
       "422": {
-       "description": "Validation Error",
+       "description": "Consentement absent, visage non détecté ou plusieurs personnes",
        "content": {
         "application/json": {
          "schema": {
-          "$ref": "#/components/schemas/HTTPValidationError"
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Reconnaissance faciale indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
          }
         }
        }
       }
-     }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
     }
    }
   },
@@ -653,6 +580,129 @@ window.ORBE_SPECS = {
       "detail"
      ],
      "title": "ErrorOut"
+    },
+    "FaceChallenge": {
+     "properties": {
+      "direction": {
+       "type": "string",
+       "enum": [
+        "left",
+        "right"
+       ],
+       "title": "Direction"
+      },
+      "frames": {
+       "type": "integer",
+       "title": "Frames",
+       "description": "Nombre d'images à envoyer"
+      },
+      "interval_ms": {
+       "type": "integer",
+       "title": "Interval Ms",
+       "description": "Intervalle conseillé entre deux images",
+       "default": 250
+      }
+     },
+     "type": "object",
+     "required": [
+      "direction",
+      "frames"
+     ],
+     "title": "FaceChallenge",
+     "description": "Consigne du test du vivant : filmer le visage pendant que la tête tourne dans ce sens."
+    },
+    "FaceEnrollRequest": {
+     "properties": {
+      "consent": {
+       "type": "boolean",
+       "title": "Consent",
+       "description": "Consentement explicite au traitement des données biométriques (RGPD art. 9)"
+      },
+      "frames": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "maxItems": 30,
+       "minItems": 1,
+       "title": "Frames",
+       "description": "Images JPEG encodées en base64, capturées par la caméra du navigateur"
+      }
+     },
+     "type": "object",
+     "required": [
+      "consent",
+      "frames"
+     ],
+     "title": "FaceEnrollRequest"
+    },
+    "FaceLoginRequest": {
+     "properties": {
+      "session_id": {
+       "type": "string",
+       "maxLength": 36,
+       "minLength": 36,
+       "title": "Session Id"
+      },
+      "frames": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "maxItems": 20,
+       "minItems": 1,
+       "title": "Frames",
+       "description": "Images JPEG encodées en base64, capturées par la caméra du navigateur"
+      }
+     },
+     "type": "object",
+     "required": [
+      "session_id",
+      "frames"
+     ],
+     "title": "FaceLoginRequest"
+    },
+    "FaceStatus": {
+     "properties": {
+      "enrolled": {
+       "type": "boolean",
+       "title": "Enrolled"
+      },
+      "templates": {
+       "type": "integer",
+       "title": "Templates"
+      },
+      "model": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Model"
+      },
+      "consent_at": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Consent At"
+      }
+     },
+     "type": "object",
+     "required": [
+      "enrolled",
+      "templates",
+      "model",
+      "consent_at"
+     ],
+     "title": "FaceStatus"
     },
     "HTTPValidationError": {
      "properties": {
@@ -705,17 +755,15 @@ window.ORBE_SPECS = {
        "type": "string",
        "title": "Session Id"
       },
-      "webauthn_options": {
+      "face_challenge": {
        "anyOf": [
         {
-         "additionalProperties": true,
-         "type": "object"
+         "$ref": "#/components/schemas/FaceChallenge"
         },
         {
          "type": "null"
         }
-       ],
-       "title": "Webauthn Options"
+       ]
       },
       "token": {
        "anyOf": [
@@ -727,9 +775,9 @@ window.ORBE_SPECS = {
         }
        ]
       },
-      "passkey_enrollment_required": {
+      "face_enrollment_required": {
        "type": "boolean",
-       "title": "Passkey Enrollment Required",
+       "title": "Face Enrollment Required",
        "default": false
       }
      },
@@ -739,7 +787,7 @@ window.ORBE_SPECS = {
       "session_id"
      ],
      "title": "LoginResponse",
-     "description": "Étape 1 de la connexion.\n\n- `mfa_required = true` : valider la passkey avec `webauthn_options`, puis\n  `POST /login/passkey` ;\n- sinon : `token` est fourni. `passkey_enrollment_required = true` signale un compte\n  sans passkey : la session ne permet que de consulter et d'enregistrer une passkey."
+     "description": "Étape 1 de la connexion.\n\n- `mfa_required = true` : filmer le visage selon `face_challenge`, puis `POST /login/face` ;\n- sinon : `token` est fourni. `face_enrollment_required = true` signale un compte sans\n  visage enregistré : la session ne permet que de consulter et d'enrôler son visage."
     },
     "MeResponse": {
      "properties": {
@@ -766,9 +814,9 @@ window.ORBE_SPECS = {
        "type": "array",
        "title": "Factors"
       },
-      "passkey_count": {
-       "type": "integer",
-       "title": "Passkey Count"
+      "face_enrolled": {
+       "type": "boolean",
+       "title": "Face Enrolled"
       }
      },
      "type": "object",
@@ -778,88 +826,9 @@ window.ORBE_SPECS = {
       "phone_masked",
       "display_name",
       "factors",
-      "passkey_count"
+      "face_enrolled"
      ],
      "title": "MeResponse"
-    },
-    "PasskeyLoginRequest": {
-     "properties": {
-      "session_id": {
-       "type": "string",
-       "maxLength": 36,
-       "minLength": 36,
-       "title": "Session Id"
-      },
-      "credential": {
-       "additionalProperties": true,
-       "type": "object",
-       "title": "Credential",
-       "description": "Réponse de navigator.credentials.get()"
-      }
-     },
-     "type": "object",
-     "required": [
-      "session_id",
-      "credential"
-     ],
-     "title": "PasskeyLoginRequest"
-    },
-    "PasskeyOut": {
-     "properties": {
-      "id": {
-       "type": "string",
-       "title": "Id"
-      },
-      "device_name": {
-       "type": "string",
-       "title": "Device Name"
-      },
-      "created_at": {
-       "type": "string",
-       "title": "Created At"
-      },
-      "last_used_at": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Last Used At"
-      }
-     },
-     "type": "object",
-     "required": [
-      "id",
-      "device_name",
-      "created_at",
-      "last_used_at"
-     ],
-     "title": "PasskeyOut"
-    },
-    "PasskeyRegisterRequest": {
-     "properties": {
-      "credential": {
-       "additionalProperties": true,
-       "type": "object",
-       "title": "Credential",
-       "description": "Réponse de navigator.credentials.create()"
-      },
-      "device_name": {
-       "type": "string",
-       "maxLength": 80,
-       "minLength": 1,
-       "title": "Device Name",
-       "default": "Mon appareil"
-      }
-     },
-     "type": "object",
-     "required": [
-      "credential"
-     ],
-     "title": "PasskeyRegisterRequest"
     },
     "RegisterRequest": {
      "properties": {
@@ -1039,11 +1008,11 @@ window.ORBE_SPECS = {
   "tags": [
    {
     "name": "Authentification",
-    "description": "Connexion en deux étapes (mot de passe, puis passkey) et profil"
+    "description": "Connexion en deux étapes (mot de passe, puis visage) et profil"
    },
    {
-    "name": "Passkeys",
-    "description": "Appareils WebAuthn (Face ID, Windows Hello)"
+    "name": "Visage",
+    "description": "Enrôlement et effacement du visage (consentement, RGPD art. 9)"
    },
    {
     "name": "Partenaires",
@@ -1065,7 +1034,7 @@ window.ORBE_SPECS = {
   "openapi": "3.1.0",
   "info": {
    "title": "Orbe — payment-service",
-   "description": "Paiements entre clients Orbe : transferts payés par carte de test, demandes d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF sous `/api/payments`.\n\n- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service ; la session ne doit pas être révoquée. Déplacer de l'argent exige une session confirmée par passkey (`403 second_factor_required` sinon).\n- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n- Plafond : 500 € par opération. Chaque opération autorisée passe deux écritures comptables (débit, crédit).\n- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` (refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\nVoir CADRAGE §4.3.",
+   "description": "Paiements entre clients Orbe : transferts payés par carte de test, demandes d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF sous `/api/payments`.\n\n- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service ; la session ne doit pas être révoquée. Déplacer de l'argent exige une session confirmée par reconnaissance faciale (`403 second_factor_required` sinon).\n- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n- Plafond : 500 € par opération. Chaque opération autorisée passe deux écritures comptables (débit, crédit).\n- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` (refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\nVoir CADRAGE §4.3.",
    "version": "0.1.0"
   },
   "paths": {
@@ -1131,7 +1100,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session non confirmée par passkey",
+       "description": "Session non confirmée par reconnaissance faciale",
        "content": {
         "application/json": {
          "schema": {
@@ -1441,7 +1410,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session non confirmée par passkey",
+       "description": "Session non confirmée par reconnaissance faciale",
        "content": {
         "application/json": {
          "schema": {
@@ -1611,7 +1580,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session non confirmée par passkey",
+       "description": "Session non confirmée par reconnaissance faciale",
        "content": {
         "application/json": {
          "schema": {
@@ -1735,7 +1704,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session non confirmée par passkey",
+       "description": "Session non confirmée par reconnaissance faciale",
        "content": {
         "application/json": {
          "schema": {
@@ -1958,7 +1927,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session non confirmée par passkey",
+       "description": "Session non confirmée par reconnaissance faciale",
        "content": {
         "application/json": {
          "schema": {
@@ -2313,7 +2282,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session non confirmée par passkey",
+       "description": "Session non confirmée par reconnaissance faciale",
        "content": {
         "application/json": {
          "schema": {
@@ -2385,7 +2354,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session non confirmée par passkey",
+       "description": "Session non confirmée par reconnaissance faciale",
        "content": {
         "application/json": {
          "schema": {
@@ -2455,7 +2424,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session non confirmée par passkey",
+       "description": "Session non confirmée par reconnaissance faciale",
        "content": {
         "application/json": {
          "schema": {
@@ -2564,7 +2533,7 @@ window.ORBE_SPECS = {
        }
       },
       "403": {
-       "description": "Session non confirmée par passkey",
+       "description": "Session non confirmée par reconnaissance faciale",
        "content": {
         "application/json": {
          "schema": {

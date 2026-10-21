@@ -17,11 +17,11 @@
 | # | Règle |
 |---|---|
 | RG-01 | Un client est identifié par un identifiant ; son email et son téléphone sont uniques. |
-| RG-02 | La connexion exige **deux facteurs** : le mot de passe (stocké haché en argon2id) puis une **passkey** (WebAuthn) déverrouillée par la biométrie de l'appareil (Face ID, Windows Hello). Aucune donnée biométrique n'est transmise ni stockée : le serveur ne conserve que la clé publique de la passkey. |
-| RG-03 | Un client enregistre 0 à n passkeys (une par appareil) ; une passkey appartient à un seul client. |
-| RG-04 | Après 5 échecs de mot de passe, le compte est bloqué 10 minutes. Chaque tentative est tracée dans les journaux (Loki / SOC), pas en base. |
-| RG-05 | Une session est ouverte par un seul client, à travers une seule application cliente (CLIENT_API). Elle passe par l'état `en_attente_2fa` tant que la passkey n'a pas été vérifiée, puis devient `active`. Elle peut être **révoquée** (compromission, déconnexion) avant son expiration. |
-| RG-06 | Une session active est confirmée par au plus une passkey. Exception documentée : les sessions de la **sonde** (CLIENT_API de type `service`) sont ouvertes sans passkey et ne peuvent agir que sur les comptes de la sonde. |
+| RG-02 | La connexion exige **deux facteurs** : le mot de passe (stocké haché en argon2id) puis le **visage**, reconnu par auth-service (modèle InsightFace) avec détection du vivant (tourner la tête du côté demandé). Aucune image n'est conservée. |
+| RG-03 | Un client possède 0 ou 3 à 5 **gabarits faciaux** (embeddings chiffrés, angles de vue différents), enregistrés en une fois après **consentement explicite** et effaçables à sa demande ; un gabarit appartient à un seul client. |
+| RG-04 | Après 5 échecs (mot de passe ou visage), le compte est bloqué 10 minutes. Chaque tentative est tracée dans les journaux (Loki / SOC), pas en base. |
+| RG-05 | Une session est ouverte par un seul client, à travers une seule application cliente (CLIENT_API). Elle passe par l'état `en_attente_2fa` tant que le visage n'a pas été vérifié (2 minutes au plus ; un échec la révoque), puis devient `active`. Elle peut être **révoquée** (compromission, déconnexion) avant son expiration. |
+| RG-06 | Une session active est confirmée par au plus un gabarit facial (celui qui a reconnu le client, avec son score). Exception documentée : les sessions de la **sonde** (CLIENT_API de type `service`) sont ouvertes sans visage et ne peuvent agir que sur les comptes de la sonde. |
 | RG-07 | Une application cliente (appli Orbe, partenaire, sonde) est identifiée par une clé d'API stockée sous forme d'empreinte SHA-256 et limitée à des périmètres. |
 
 ### Paiements (payment-service)
@@ -44,18 +44,18 @@
 
 | Étape | Où | Ce qui se passe |
 |---|---|---|
-| Enregistrement du visage | **Téléphone / PC** (réglages Face ID, Windows Hello) | Fait une fois par l'utilisateur, en dehors d'Orbe. Le gabarit du visage ne quitte jamais l'appareil. |
-| Inscription d'une passkey sur Orbe | Appareil → auth-service | L'appareil crée une paire de clés ; la **clé privée** reste dans sa puce sécurisée, verrouillée par le visage. Orbe stocke **uniquement la clé publique** (entité PASSKEY). |
-| Connexion | Appareil ↔ auth-service | Orbe envoie un défi ; l'appareil affiche Face ID, **reconnaît le visage lui-même**, puis signe le défi. Orbe vérifie la signature avec la clé publique. |
+| Enrôlement | Caméra du front → auth-service | Après consentement, ~16 images pendant que le client tourne la tête. auth-service détecte le visage, garde 3 à 5 **gabarits** d'angles variés, les chiffre et oublie les images. |
+| Connexion | Caméra du front → auth-service | Après le mot de passe, défi « tournez la tête à gauche / à droite ». auth-service vérifie la rotation (vivant) et compare les gabarits calculés à ceux du client (similarité cosinus ≥ 0,40). |
+| Effacement | auth-service | `DELETE /face` supprime gabarits et consentement. |
 
-Orbe n'enregistre donc **aucune image ni gabarit biométrique** : c'est l'appareil qui fait la reconnaissance faciale, Orbe en reçoit la preuve cryptographique. Alternative écartée : stocker une photo ou un gabarit côté serveur (donnée sensible RGPD art. 9, fraude par simple photo sans détection du vivant, modèle lourd sur le PC Hôte).
+Orbe conserve donc des **données biométriques** (RGPD art. 9) : seulement des embeddings chiffrés, jamais d'image, ni dans la base ni dans les journaux. Base légale : consentement explicite (`clients.biometric_consent_at`). Démonstrateur : comptes fictifs, visages de volontaires de l'équipe.
 
 ## 3. Entités
 
 | Entité | Domaine | Rôle |
 |---|---|---|
 | CLIENT | commun | Utilisateur d'Orbe : identité, mot de passe, blocage, jeton du QR « Recevoir ». |
-| PASSKEY | auth | Identifiant WebAuthn d'un appareil : clé publique et compteur de signatures (détection de clonage). |
+| GABARIT_FACIAL | auth | Embedding du visage d'un client (512 dimensions), chiffré en AES-256-GCM et lié à son propriétaire ; modèle qui l'a produit, qualité de détection. |
 | SESSION | auth | Session ouverte après authentification ; porte les facteurs utilisés et l'état de révocation. Son identifiant est le `jti` du JWT. |
 | CLIENT_API | auth | Application qui ouvre les sessions : appli Orbe, partenaire, sonde. Remplace la table `api_keys` de la v1. |
 | OPÉRATION | paiement | Paiement, remboursement ou retrait ; référence publique `tx_` + 8 caractères hexadécimaux. |
@@ -68,10 +68,10 @@ Orbe n'enregistre donc **aucune image ni gabarit biométrique** : c'est l'appare
 
 | Association | Entités | Cardinalités | Lecture |
 |---|---|---|---|
-| ENREGISTRER | PASSKEY — CLIENT | 1,1 — 0,n | Une passkey appartient à 1 client ; un client a 0 à n passkeys (RG-03). |
+| ENREGISTRER | GABARIT_FACIAL — CLIENT | 1,1 — 0,n | Un gabarit appartient à 1 client ; un client a 0 à n gabarits (0 ou 3 à 5 en pratique, RG-03). |
 | OUVRIR | SESSION — CLIENT | 1,1 — 0,n | Une session est ouverte par 1 client ; un client ouvre 0 à n sessions (RG-05). |
 | AUTHENTIFIER | CLIENT_API — SESSION | 0,n — 1,1 | Une application ouvre 0 à n sessions ; une session passe par 1 application (RG-05). |
-| CONFIRMER | PASSKEY — SESSION | 0,n — 0,1 | Une passkey confirme 0 à n sessions ; une session est confirmée par 0 ou 1 passkey (RG-06). |
+| CONFIRMER | GABARIT_FACIAL — SESSION | 0,n — 0,1 | Un gabarit confirme 0 à n sessions ; une session est confirmée par 0 ou 1 gabarit (RG-06). |
 | INITIER | SESSION — OPÉRATION | 0,n — 1,1 | Une session initie 0 à n opérations ; une opération vient de 1 session (RG-08). |
 | ÉMETTRE | CLIENT — OPÉRATION | 0,n — 1,1 | Un client émet 0 à n opérations ; une opération a 1 émetteur (RG-08). |
 | BÉNÉFICIER | CLIENT — OPÉRATION | 0,n — 0,1 | Une opération a 0 ou 1 bénéficiaire (RG-10). |
@@ -104,7 +104,8 @@ Orbe n'enregistre donc **aucune image ni gabarit biométrique** : c'est l'appare
 | Montant > 0 et ≤ 500 € | `CHECK` + payment-service |
 | Le client de la session qui initie une opération en est l'émetteur | payment-service (lecture du `jti` et du `sub` du JWT) |
 | Une session `révoquée` ou `expirée` n'initie plus d'opération | payment-service : liste de révocation consultée avec un cache court, pour ne pas consommer une connexion du pool à chaque paiement |
-| Le compteur d'une passkey ne fait qu'augmenter (sinon : passkey clonée, session refusée) | auth-service (vérification WebAuthn) |
+| Un gabarit ne se déchiffre que pour son propriétaire (client_id en donnée authentifiée AES-GCM) | auth-service |
+| Un client a 0 ou 3 à 5 gabarits, tous du même visage et du même modèle | auth-service (enrôlement remplace l'ensemble) |
 | Exactement un compte lié par défaut par client (s'il en a au moins un) | payment-service (bascule atomique du compte par défaut) |
 | Pas de contact vers soi-même, pas de doublon | `CHECK (owner_id <> contact_id)`, `PRIMARY KEY (owner_id, contact_id)` |
 | Clé d'idempotence unique par client émetteur | `UNIQUE (payer_id, idempotency_key)`, `UNIQUE (requester_id, idempotency_key)` |
@@ -116,10 +117,10 @@ Clés primaires soulignées, clés étrangères précédées de `#`.
 
 | Table | Colonnes | Associations traduites |
 |---|---|---|
-| **clients** | <u>id</u>, email, phone, display_name, password_hash, failed_logins, locked_until, qr_token, is_probe, created_at | — (le solde passe dans `ledger_accounts`) |
-| **passkeys** | <u>id</u>, credential_id *unique*, public_key, sign_count, device_name, created_at, last_used_at, #client_id | ENREGISTRER |
+| **clients** | <u>id</u>, email, phone, display_name, password_hash, failed_logins, locked_until, biometric_consent_at, qr_token, is_probe, created_at | — (le solde passe dans `ledger_accounts`) |
+| **client_face_templates** | <u>id</u>, embedding_ct, embedding_dim, model, quality_score, captured_at, #client_id | ENREGISTRER |
 | **client_apis** | <u>id</u>, name, type, key_hash *unique, nullable*, scopes, active, created_at | remplace `api_keys` |
-| **sessions** | <u>id</u> (= `jti`), status, factors, webauthn_challenge, ip_address, opened_at, expires_at, revoked_at, revocation_reason, #client_id, #client_api_id, #passkey_id *nullable* | OUVRIR, AUTHENTIFIER, CONFIRMER |
+| **sessions** | <u>id</u> (= `jti`), status, factors, challenge, face_score, ip_address, opened_at, expires_at, revoked_at, revocation_reason, #client_id, #client_api_id, #face_template_id *nullable* | OUVRIR, AUTHENTIFIER, CONFIRMER |
 | **ledger_accounts** | <u>id</u>, type, label, balance_cents, #client_id *unique, nullable* | DÉTENIR |
 | **payout_accounts** | <u>id</u>, label, iban_last4, is_default, #client_id | POSSÉDER |
 | **contacts** | <u>#owner_id, #contact_id</u>, alias, added_at | ÊTRE_CONTACT (association n,n → table) |
@@ -131,7 +132,7 @@ Clés primaires soulignées, clés étrangères précédées de `#`.
 
 | Compte | Droits |
 |---|---|
-| `auth_svc` | `clients` (lecture, `UPDATE (failed_logins, locked_until)`), `passkeys`, `sessions` (lecture/écriture), `client_apis` (lecture) |
+| `auth_svc` | `clients` (lecture, insertion limitée, `UPDATE (failed_logins, locked_until, biometric_consent_at)`), `client_face_templates` (lecture, insertion, suppression), `sessions` (lecture/écriture), `client_apis` (lecture) |
 | `payment_svc` | `clients` (lecture, `UPDATE (qr_token)`), `sessions` (lecture : révocation), `ledger_accounts` (lecture, `UPDATE (balance_cents)`), `ledger_entries` (lecture, insertion), `transactions`, `payment_requests`, `payout_accounts` et `contacts` (lecture, écriture) |
 | `remediation_ro` | lecture de `transactions`, `ledger_entries`, `ledger_accounts` (contrôle de cohérence) |
 
@@ -141,7 +142,7 @@ Clés primaires soulignées, clés étrangères précédées de `#`.
 |---|---|
 | Solde stocké dans `clients`, invariant recalculé à partir des opérations | Comptabilité en partie double : `ledger_accounts` + `ledger_entries` |
 | JWT sans état, révocation par rotation de la clé | Table `sessions` : révocation ciblée (scénario SC-02) |
-| Mot de passe seul | Mot de passe + passkey biométrique (WebAuthn) |
+| Mot de passe seul | Mot de passe + reconnaissance faciale (InsightFace, détection du vivant) |
 | `api_keys` (partenaires) | `client_apis` (application, partenaire, service) |
 | Plafond 5 000 € | Plafond 500 € |
 | Un seul compte lié | 0 à n comptes liés, dont un par défaut |

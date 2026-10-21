@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orbe — payment-service",
-    "description": "Paiements entre clients Orbe : transferts payés par carte de test, demandes d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF sous `/api/payments`.\n\n- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service ; la session ne doit pas être révoquée. Déplacer de l'argent exige une session confirmée par passkey (`403 second_factor_required` sinon).\n- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n- Plafond : 500 € par opération. Chaque opération autorisée passe deux écritures comptables (débit, crédit).\n- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` (refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\nVoir CADRAGE §4.3.",
+    "description": "Paiements entre clients Orbe : transferts payés par carte de test, demandes d'argent, QR code, remboursements, solde et retraits fictifs. Exposé par le WAF sous `/api/payments`.\n\n- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service ; la session ne doit pas être révoquée. Déplacer de l'argent exige une session confirmée par reconnaissance faciale (`403 second_factor_required` sinon).\n- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n- Plafond : 500 € par opération. Chaque opération autorisée passe deux écritures comptables (débit, crédit).\n- Cartes de test : `4242 4242 4242 4242` (acceptée), `4000 0000 0000 0002` (refusée), `…0069` (expirée), `…9995` (fonds insuffisants).\n\nVoir CADRAGE §4.3.",
     "version": "0.1.0"
   },
   "paths": {
@@ -68,7 +68,7 @@
             }
           },
           "403": {
-            "description": "Session non confirmée par passkey",
+            "description": "Session non confirmée par reconnaissance faciale",
             "content": {
               "application/json": {
                 "schema": {
@@ -378,7 +378,7 @@
             }
           },
           "403": {
-            "description": "Session non confirmée par passkey",
+            "description": "Session non confirmée par reconnaissance faciale",
             "content": {
               "application/json": {
                 "schema": {
@@ -548,7 +548,7 @@
             }
           },
           "403": {
-            "description": "Session non confirmée par passkey",
+            "description": "Session non confirmée par reconnaissance faciale",
             "content": {
               "application/json": {
                 "schema": {
@@ -672,7 +672,7 @@
             }
           },
           "403": {
-            "description": "Session non confirmée par passkey",
+            "description": "Session non confirmée par reconnaissance faciale",
             "content": {
               "application/json": {
                 "schema": {
@@ -895,7 +895,7 @@
             }
           },
           "403": {
-            "description": "Session non confirmée par passkey",
+            "description": "Session non confirmée par reconnaissance faciale",
             "content": {
               "application/json": {
                 "schema": {
@@ -1250,7 +1250,7 @@
             }
           },
           "403": {
-            "description": "Session non confirmée par passkey",
+            "description": "Session non confirmée par reconnaissance faciale",
             "content": {
               "application/json": {
                 "schema": {
@@ -1322,7 +1322,7 @@
             }
           },
           "403": {
-            "description": "Session non confirmée par passkey",
+            "description": "Session non confirmée par reconnaissance faciale",
             "content": {
               "application/json": {
                 "schema": {
@@ -1392,7 +1392,7 @@
             }
           },
           "403": {
-            "description": "Session non confirmée par passkey",
+            "description": "Session non confirmée par reconnaissance faciale",
             "content": {
               "application/json": {
                 "schema": {
@@ -1501,7 +1501,7 @@
             }
           },
           "403": {
-            "description": "Session non confirmée par passkey",
+            "description": "Session non confirmée par reconnaissance faciale",
             "content": {
               "application/json": {
                 "schema": {

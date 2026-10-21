@@ -4,12 +4,13 @@ from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
-from sqlalchemy import case, func, select, text, update
+from sqlalchemy import case, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import passkeys as webauthn
 from app.db import get_session, utcnow
+from app.face.decision import decide, main_face, random_direction
+from app.face.service import analyze_frames, count_templates, decode_frames, load_templates
 from app.logging_setup import log_event
 from app.metrics import (
     ACCOUNT_LOCKS,
@@ -20,13 +21,14 @@ from app.metrics import (
     SECOND_FACTOR,
     SESSIONS_REVOKED,
 )
-from app.models import Client, ClientApi, Passkey, Session
+from app.models import Client, ClientApi, Session
 from app.schemas import (
     ErrorOut,
+    FaceChallenge,
+    FaceLoginRequest,
     LoginRequest,
     LoginResponse,
     MeResponse,
-    PasskeyLoginRequest,
     RegisterRequest,
     RegisterResponse,
     TokenResponse,
@@ -47,7 +49,13 @@ router = APIRouter()
 logger = logging.getLogger("auth")
 
 INVALID_CREDENTIALS = error("invalid_credentials", "Email ou mot de passe incorrect.")
-SECOND_FACTOR_FAILED = error("second_factor_failed", "Validation de la passkey refusée.")
+SECOND_FACTOR_FAILED = error(
+    "second_factor_failed", "Visage non reconnu. Recommencez la connexion."
+)
+LIVENESS_FAILED = error(
+    "liveness_failed",
+    "Mouvement de la tête non détecté dans le sens demandé. Recommencez la connexion.",
+)
 CLIENT_NOT_ALLOWED = error("client_not_allowed", "Cette application ne peut pas ouvrir de session.")
 
 
@@ -107,7 +115,7 @@ INSERT_CLIENT = text(
 async def register(
     body: RegisterRequest, request: Request, db: AsyncSession = Depends(get_session)
 ) -> RegisterResponse:
-    """Crée un compte client. Étape suivante : `POST /login`, puis enregistrer une passkey.
+    """Crée un compte client. Ensuite : `POST /login`, puis `POST /face/enroll` (visage).
 
     Hors périmètre du démonstrateur : vérification de l'email et du téléphone, KYC.
     """
@@ -232,22 +240,24 @@ async def login(
         )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
 
-    # Exception documentée : un service (la sonde) se connecte sans passkey, mais
-    # uniquement sur les comptes de la sonde
+    # Exception documentée : un service (la sonde) se connecte sans reconnaissance faciale,
+    # mais uniquement sur les comptes de la sonde
     if api.type == "service" and not client.is_probe:
         log_event(logger, "login_refused", reason="service_on_regular_account", client_id=client.id)
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=CLIENT_NOT_ALLOWED)
 
-    if client.failed_logins or client.locked_until:
-        await db.execute(
-            update(Client).where(Client.id == client.id).values(failed_logins=0, locked_until=None)
-        )
-        await db.commit()
-
-    registered = (
-        (await db.execute(select(Passkey).where(Passkey.client_id == client.id))).scalars().all()
-    )
-    if api.type == "service" or not registered:
+    enrolled = await count_templates(db, client.id)
+    if api.type == "service" or not enrolled:
+        # Connexion complète dès le mot de passe : le compteur d'échecs repart à zéro. Avec un
+        # visage enregistré, il n'est remis à zéro qu'après le visage (sinon, un mot de passe
+        # connu permettrait de retenter le visage indéfiniment).
+        if client.failed_logins or client.locked_until:
+            await db.execute(
+                update(Client)
+                .where(Client.id == client.id)
+                .values(failed_logins=0, locked_until=None)
+            )
+            await db.commit()
         session = await open_session(
             db, client, api, status_="active", factors=["pwd"], ttl_seconds=state.tokens.ttl, ip=ip
         )
@@ -257,10 +267,10 @@ async def login(
             mfa_required=False,
             session_id=session.id,
             token=token_for(request, client, session, api),
-            passkey_enrollment_required=api.type != "service",
+            face_enrollment_required=api.type != "service",
         )
 
-    challenge = webauthn.login_challenge(settings, list(registered))
+    direction = random_direction()
     session = await open_session(
         db,
         client,
@@ -269,101 +279,133 @@ async def login(
         factors=["pwd"],
         ttl_seconds=settings.pending_2fa_seconds,
         ip=ip,
-        challenge=challenge.challenge,
+        challenge=direction,
     )
     log_event(logger, "second_factor_requested", client_id=client.id, client_ip=ip)
     return LoginResponse(
-        mfa_required=True, session_id=session.id, webauthn_options=challenge.options
+        mfa_required=True,
+        session_id=session.id,
+        face_challenge=FaceChallenge(direction=direction, frames=settings.login_frames),
     )
 
 
 @router.post(
-    "/login/passkey",
+    "/login/face",
     response_model=TokenResponse,
     tags=["Authentification"],
-    summary="Se connecter — étape 2 : passkey (Face ID, Windows Hello)",
+    summary="Se connecter — étape 2 : reconnaissance faciale",
     responses={
-        401: {"model": ErrorOut, "description": "Passkey refusée ou session expirée"},
+        401: {
+            "model": ErrorOut,
+            "description": "Visage non reconnu, test du vivant échoué ou session expirée",
+        },
+        422: {"model": ErrorOut, "description": "Images invalides"},
         429: {"model": ErrorOut, "description": "Trop de tentatives depuis cette IP"},
+        503: {"model": ErrorOut, "description": "Reconnaissance faciale indisponible"},
     },
 )
-async def login_passkey(
-    body: PasskeyLoginRequest, request: Request, db: AsyncSession = Depends(get_session)
+async def login_face(
+    body: FaceLoginRequest, request: Request, db: AsyncSession = Depends(get_session)
 ) -> TokenResponse:
-    settings = request.app.state.settings
+    """Images filmées pendant que la tête tourne dans le sens indiqué par `face_challenge`.
+
+    Un échec clôt la tentative (il faut recommencer `POST /login`, avec une nouvelle consigne)
+    et compte dans le blocage du compte, comme un mauvais mot de passe.
+    """
+    state = request.app.state
+    settings = state.settings
     ip = client_ip(request)
     rate_limit(request, ip)
-
-    def refuse(reason: str) -> HTTPException:
-        SECOND_FACTOR.labels(result="failed").inc()
-        log_event(
-            logger, "second_factor_failed", reason=reason, session_id=body.session_id, client_ip=ip
-        )
-        return unauthorized(SECOND_FACTOR_FAILED)
 
     session = await db.get(Session, body.session_id)
     if (
         session is None
         or session.status != "pending_2fa"
-        or session.challenge_purpose != "login"
-        or not session.webauthn_challenge
+        or not session.challenge
         or session.expires_at <= utcnow()
     ):
-        raise refuse("no_pending_session")
+        SECOND_FACTOR.labels(result="no_pending_session").inc()
+        raise unauthorized(SECOND_FACTOR_FAILED)
 
-    try:
-        credential_id = webauthn.credential_id_of(body.credential)
-    except webauthn.PasskeyError:
-        raise refuse("malformed_credential") from None
-    passkey = (
+    frames = decode_frames(
+        body.frames, max_frames=settings.login_max_frames, max_bytes=settings.frame_max_bytes
+    )
+    templates = await load_templates(
+        db, state.face_cipher, session.client_id, state.face_engine.model_name
+    )
+    per_frame = await analyze_frames(state.face_engine, frames)
+    decision = decide(
+        [main_face(faces) for faces in per_frame],
+        templates,
+        direction=session.challenge,
+        threshold=settings.face_threshold,
+        min_matching_frames=settings.face_min_matching_frames,
+        min_turn_degrees=settings.liveness_min_turn_degrees,
+        left_is_positive_yaw=settings.liveness_left_is_positive_yaw,
+    )
+    log_fields = {
+        "client_id": session.client_id,
+        "session_id": session.id,
+        "best_score": decision.best_score,
+        "matching_frames": decision.matching_frames,
+        "faces_seen": decision.faces_seen,
+        "head_turn": decision.head_turn,
+        "client_ip": ip,
+    }
+
+    if not decision.recognized:
+        # La tentative est close : une nouvelle connexion tire une nouvelle consigne
         await db.execute(
-            select(Passkey).where(
-                Passkey.credential_id == credential_id, Passkey.client_id == session.client_id
+            update(Session)
+            .where(Session.id == session.id, Session.status == "pending_2fa")
+            .values(
+                status="revoked",
+                challenge=None,
+                revoked_at=utcnow(),
+                revocation_reason=decision.reason,
             )
         )
-    ).scalar_one_or_none()
-    if passkey is None:
-        raise refuse("unknown_passkey")
-    try:
-        new_count = webauthn.verify_login(
-            settings, body.credential, session.webauthn_challenge, passkey
-        )
-    except webauthn.PasskeyError as exc:
-        raise refuse(str(exc)[:120]) from None
+        await db.commit()
+        await register_failure(db, session.client_id, request)
+        SECOND_FACTOR.labels(result=decision.reason).inc()
+        log_event(logger, "second_factor_failed", reason=decision.reason, **log_fields)
+        # Le motif « test du vivant » ne dépend pas de l'identité : il peut être affiché
+        detail = LIVENESS_FAILED if decision.reason == "liveness_failed" else SECOND_FACTOR_FAILED
+        raise unauthorized(detail)
 
-    # Défi à usage unique : seule la première réponse valide active la session
     activated = await db.execute(
         update(Session)
         .where(
             Session.id == session.id,
             Session.status == "pending_2fa",
-            Session.webauthn_challenge == session.webauthn_challenge,
+            Session.challenge == session.challenge,
         )
         .values(
             status="active",
-            factors="pwd,passkey",
-            passkey_id=passkey.id,
-            webauthn_challenge=None,
-            challenge_purpose=None,
-            expires_at=utcnow() + timedelta(seconds=request.app.state.tokens.ttl),
+            factors="pwd,face",
+            face_template_id=decision.template_id,
+            face_score=decision.best_score,
+            challenge=None,
+            expires_at=utcnow() + timedelta(seconds=state.tokens.ttl),
         )
     )
     if activated.rowcount != 1:
         await db.rollback()
-        raise refuse("challenge_already_used")
+        SECOND_FACTOR.labels(result="no_pending_session").inc()
+        raise unauthorized(SECOND_FACTOR_FAILED)
     await db.execute(
-        update(Passkey)
-        .where(Passkey.id == passkey.id)
-        .values(sign_count=new_count, last_used_at=utcnow())
+        update(Client)
+        .where(Client.id == session.client_id)
+        .values(failed_logins=0, locked_until=None)
     )
     await db.commit()
     await db.refresh(session)
 
     client = await db.get(Client, session.client_id)
     api = await db.get(ClientApi, session.client_api_id)
-    SECOND_FACTOR.labels(result="succeeded").inc()
+    SECOND_FACTOR.labels(result="recognized").inc()
     LOGINS.inc()
-    log_event(logger, "login_succeeded", client_id=client.id, factors="pwd,passkey", client_ip=ip)
+    log_event(logger, "login_succeeded", factors="pwd,face", **log_fields)
     return token_for(request, client, session, api)
 
 
@@ -405,16 +447,13 @@ async def me(
     client = await db.get(Client, claims["sub"])
     if client is None:
         raise unauthorized()
-    count = await db.scalar(
-        select(func.count()).select_from(Passkey).where(Passkey.client_id == client.id)
-    )
     return MeResponse(
         client_id=client.id,
         email=client.email,
         phone_masked=mask_phone(client.phone),
         display_name=client.display_name,
         factors=session.factor_list,
-        passkey_count=count,
+        face_enrolled=await count_templates(db, client.id) > 0,
     )
 
 

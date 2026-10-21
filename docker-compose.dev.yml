@@ -1,6 +1,7 @@
 # Orbe — environnement de développement local : MariaDB + auth-service + payment-service.
 # Ce n'est PAS la pile de démonstration (pas de WAF, d'observabilité ni de remédiation) :
-# le docker-compose.yml complet est construit par l'équipe infra (CADRAGE §3).
+# celle-ci est infra/docker-compose.yml, construite par l'équipe infra. Les deux utilisent
+# les mêmes Dockerfiles (dockerfiles/).
 #
 # Démarrage (voir README, section « Lancer en local ») :
 #   services/auth-service/.venv/Scripts/python scripts/init_dev_secrets.py
@@ -20,7 +21,7 @@ x-hardening: &hardening
 
 services:
   mariadb:
-    image: mariadb:11.4
+    build: { context: ., dockerfile: dockerfiles/Dockerfile-mariadb }  # schéma, comptes, configuration
     environment:
       MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
       MARIADB_AUTH_SVC_PASSWORD_FILE: /run/secrets/auth_db_password
@@ -36,11 +37,8 @@ services:
       - exporter_db_password
       - probe_api_key
     volumes:
-      - ./infra/mariadb/init/01-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ./infra/mariadb/init/02-users.sh:/docker-entrypoint-initdb.d/02-users.sh:ro
-      - ./infra/mariadb/init/03-client-apis.sh:/docker-entrypoint-initdb.d/03-client-apis.sh:ro
+      # données de démo : environnement de développement uniquement
       - ./infra/mariadb/seed/90-demo-data.sql:/docker-entrypoint-initdb.d/90-demo-data.sql:ro
-      - ./infra/mariadb/conf.d/orbe.cnf:/etc/mysql/conf.d/orbe.cnf:ro
       - mariadb-data:/var/lib/mysql
     ports:
       - "127.0.0.1:3307:3306"   # pour un client SQL local ; jamais exposé au hotspot
@@ -52,15 +50,19 @@ services:
     restart: unless-stopped
 
   auth-service:
-    build: ./services/auth-service
+    build: { context: ., dockerfile: dockerfiles/Dockerfile-auth }
     <<: *hardening
     environment:
       AUTH_DB_HOST: mariadb
       AUTH_DB_PASSWORD_FILE: /run/secrets/auth_db_password
       AUTH_JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
+      AUTH_FACE_KEY_FILE: /run/secrets/face_embedding_key
+      # Moteur simulé : scripts/dev_token.py et Swagger sans caméra. « insightface » pour
+      # tester le vrai modèle (prévoir mem_limit: 1g).
+      AUTH_FACE_ENGINE: fake
       AUTH_ENABLE_DOCS: "true"
       AUTH_LOG_LEVEL: INFO
-    secrets: [auth_db_password, jwt_private_key]
+    secrets: [auth_db_password, jwt_private_key, face_embedding_key]
     depends_on:
       mariadb: { condition: service_healthy }
     ports:
@@ -68,7 +70,7 @@ services:
     mem_limit: 256m
 
   payment-service:
-    build: ./services/payment-service
+    build: { context: ., dockerfile: dockerfiles/Dockerfile-payment }
     <<: *hardening
     environment:
       PAYMENT_DB_HOST: mariadb
@@ -92,6 +94,7 @@ secrets:
   probe_api_key:           { file: ./secrets/probe_api_key }
   jwt_private_key:         { file: ./secrets/jwt_private_key.pem }
   jwt_public_key:          { file: ./secrets/jwt_public_key.pem }
+  face_embedding_key:      { file: ./secrets/face_embedding_key }
 
 volumes:
   mariadb-data:

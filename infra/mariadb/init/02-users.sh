@@ -33,11 +33,11 @@ EXPORTER_PASSWORD="$(secret MARIADB_EXPORTER_PASSWORD)" || exit 1
 run_sql <<-EOSQL
 	CREATE USER IF NOT EXISTS 'auth_svc'@'%' IDENTIFIED BY '${AUTH_SVC_PASSWORD}';
 	GRANT SELECT ON orbe.clients TO 'auth_svc'@'%';
-	GRANT UPDATE (failed_logins, locked_until) ON orbe.clients TO 'auth_svc'@'%';
+	GRANT UPDATE (failed_logins, locked_until, biometric_consent_at) ON orbe.clients TO 'auth_svc'@'%';
 	-- inscription : is_probe n'en fait pas partie (une inscription ne crée jamais de compte de sonde)
 	GRANT INSERT (id, email, phone, display_name, password_hash) ON orbe.clients TO 'auth_svc'@'%';
 	GRANT SELECT ON orbe.client_apis TO 'auth_svc'@'%';
-	GRANT SELECT, INSERT, UPDATE, DELETE ON orbe.passkeys TO 'auth_svc'@'%';
+	GRANT SELECT, INSERT, DELETE ON orbe.client_face_templates TO 'auth_svc'@'%';
 	GRANT SELECT, INSERT, UPDATE ON orbe.sessions TO 'auth_svc'@'%';
 
 	CREATE USER IF NOT EXISTS 'payment_svc'@'%' IDENTIFIED BY '${PAYMENT_SVC_PASSWORD}';

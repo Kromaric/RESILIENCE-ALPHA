@@ -5,17 +5,17 @@ reprennent que les colonnes utiles au service.
 """
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     CHAR,
     JSON,
-    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
-    Text,
     false,
     func,
 )
@@ -41,6 +41,7 @@ class Client(Base):
     failed_logins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_probe: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    biometric_consent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, server_default=func.current_timestamp()
     )
@@ -60,19 +61,18 @@ class ClientApi(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
-class Passkey(Base):
-    """Passkey WebAuthn d'un appareil : seule la clé publique est conservée."""
+class ClientFaceTemplate(Base):
+    """Gabarit facial d'un client : embedding chiffré, lié à son titulaire. Aucune image."""
 
-    __tablename__ = "passkeys"
+    __tablename__ = "client_face_templates"
 
     id: Mapped[str] = mapped_column(CHAR(36), primary_key=True)
-    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"))
-    credential_id: Mapped[str] = mapped_column(String(512), unique=True)  # base64url
-    public_key: Mapped[str] = mapped_column(Text)  # clé COSE, base64url
-    sign_count: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), default=0)
-    device_name: Mapped[str] = mapped_column(String(80))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"))
+    embedding_ct: Mapped[str] = mapped_column(String(4096))
+    embedding_dim: Mapped[int] = mapped_column(Integer, default=512)
+    model: Mapped[str] = mapped_column(String(40))
+    quality_score: Mapped[Decimal] = mapped_column(Numeric(4, 3))
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Session(Base):
@@ -83,11 +83,13 @@ class Session(Base):
     id: Mapped[str] = mapped_column(CHAR(36), primary_key=True)
     client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"))
     client_api_id: Mapped[str] = mapped_column(ForeignKey("client_apis.id"))
-    passkey_id: Mapped[str | None] = mapped_column(ForeignKey("passkeys.id"), nullable=True)
+    face_template_id: Mapped[str | None] = mapped_column(
+        ForeignKey("client_face_templates.id", ondelete="SET NULL"), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(16))  # pending_2fa | active | revoked | expired
-    factors: Mapped[str] = mapped_column(String(40))  # « pwd » ou « pwd,passkey »
-    webauthn_challenge: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    challenge_purpose: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    factors: Mapped[str] = mapped_column(String(40))  # « pwd » ou « pwd,face »
+    challenge: Mapped[str | None] = mapped_column(String(16), nullable=True)  # left | right
+    face_score: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime)

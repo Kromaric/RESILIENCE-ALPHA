@@ -59,8 +59,8 @@ class Principal:
 
     @property
     def strong(self) -> bool:
-        """Session confirmée par passkey, ou service technique (sonde)."""
-        return "passkey" in self.factors or self.client_api_type == "service"
+        """Session confirmée par reconnaissance faciale, ou service technique (sonde)."""
+        return "face" in self.factors or self.client_api_type == "service"
 
 
 class SessionGuard:
@@ -133,12 +133,12 @@ async def current_principal(
 
 
 async def strong_principal(principal: Principal = Depends(current_principal)) -> Principal:
-    """Déplacer de l'argent exige une session confirmée par passkey (CADRAGE §4.2)."""
+    """Déplacer de l'argent exige une session confirmée par le visage (CADRAGE §4.2)."""
     if not principal.strong:
         raise api_error(
             status.HTTP_403_FORBIDDEN,
             "second_factor_required",
-            "Confirmez votre identité avec votre passkey (Face ID, Windows Hello).",
+            "Confirmez votre identité par reconnaissance faciale.",
         )
     return principal
 

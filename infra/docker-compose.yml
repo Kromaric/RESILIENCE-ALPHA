@@ -1,0 +1,217 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /:/host:ro
+    command:
+      - '--path.rootfs=/host'
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/promtail-config.yml
+      - /var/log:/var/log
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/promtail-config.yml
+    restart: unless-stopped
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: unless-stopped
+
+  safeline-waf:
+    image: chaitin/safeline-tengine:latest
+    container_name: safeline-waf
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - UPSTREAM_DASHBOARD=http://oorbe-dashboard:8080
+      - UPSTREAM_INTERFACE=http://oorbe-interface:8081
+    restart: unless-stopped
+    depends_on:
+      - oorbe-auth-service
+      - oorbe-payment-service
+
+
+############## SERVICES OORBE  ############
+
+  oorbe-auth-service:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-auth
+    container_name: oorbe-auth-service
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+        reservations:
+          memory: 256M       # RAM minimale garantie par le système
+    environment:
+      AUTH_DB_HOST: mariadb
+      AUTH_DB_PASSWORD_FILE: /run/secrets/auth_db_password
+      AUTH_JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
+      AUTH_FACE_ENGINE: insightface   # modèle embarqué dans l'image (buffalo_s)
+      AUTH_FACE_KEY_FILE: /run/secrets/face_embedding_key
+    secrets: [auth_db_password, jwt_private_key, face_embedding_key]
+    depends_on:
+      mariadb: { condition: service_healthy }
+    expose:
+      - "8001"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g   # modèle de reconnaissance faciale chargé en mémoire
+    restart: unless-stopped
+
+  oorbe-payment-service:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-payment
+    container_name: oorbe-payment-service
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+        reservations:
+          memory: 256M # RAM minimale garantie par le système
+    environment:
+      PAYMENT_DB_HOST: mariadb
+      PAYMENT_DB_PASSWORD_FILE: /run/secrets/payment_db_password
+      PAYMENT_JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public_key
+    secrets: [payment_db_password, jwt_public_key]
+    depends_on:
+      mariadb: { condition: service_healthy }
+    expose:
+      - "8002"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    restart: unless-stopped
+
+
+  #oorbe-dashboard:
+    #build:
+     # context: ..
+     # dockerfile: ./dockerfiles/Dockerfile-dashboard
+    #container_name: oorbe-dashboard
+    #expose:
+    #  - "8080"
+   # restart: unless-stopped
+
+  #oorbe-interface:
+   # build:
+     # context: ..
+     # dockerfile: ./dockerfiles/Dockerfile-interface
+    #container_name: oorbe-interface
+    #expose:
+     # - "8081"
+    #restart: unless-stopped
+
+
+  mariadb:
+    image: mariadb:latest
+    container_name: mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+      MARIADB_AUTH_SVC_PASSWORD_FILE: /run/secrets/auth_db_password
+      MARIADB_PAYMENT_SVC_PASSWORD_FILE: /run/secrets/payment_db_password
+      MARIADB_REMEDIATION_RO_PASSWORD_FILE: /run/secrets/remediation_db_password
+      MARIADB_EXPORTER_PASSWORD_FILE: /run/secrets/exporter_db_password
+      ORBE_PROBE_API_KEY_FILE: /run/secrets/probe_api_key
+    secrets:
+      - db_root_password
+      - auth_db_password
+      - payment_db_password
+      - remediation_db_password
+      - exporter_db_password
+      - probe_api_key
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./mariadb/conf.d/orbe.cnf:/etc/mysql/conf.d/orbe.cnf:ro
+      - ./mariadb/init/:/docker-entrypoint-initdb.d/:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      retries: 30
+    mem_limit: 512m
+
+  vault:
+    image: hashicorp/vault:1.15.4
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_ADDR: "http://127.0.0.1:8200"
+    volumes:
+      - ./vault.hcl:/vault/config/vault.hcl:ro
+      - vault_data:/vault/file
+    cap_add:
+      - IPC_LOCK
+    command: server
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+  mariadb_data:
+  vault_data:
+
+secrets:
+  db_root_password:        { file: ../secrets/db_root_password }
+  auth_db_password:        { file: ../secrets/auth_db_password }
+  payment_db_password:     { file: ../secrets/payment_db_password }
+  remediation_db_password: { file: ../secrets/remediation_db_password }
+  exporter_db_password:    { file: ../secrets/exporter_db_password }
+  probe_api_key:           { file: ../secrets/probe_api_key }
+  jwt_private_key:         { file: ../secrets/jwt_private_key.pem }
+  jwt_public_key:          { file: ../secrets/jwt_public_key.pem }
+  face_embedding_key:      { file: ../secrets/face_embedding_key }

@@ -79,7 +79,7 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
             "sous `/api/payments`.\n\n"
             "- Authentification : `Authorization: Bearer <JWT>` obtenu sur auth-service ; la "
             "session ne doit pas être révoquée. Déplacer de l'argent exige une session confirmée "
-            "par passkey (`403 second_factor_required` sinon).\n"
+            "par reconnaissance faciale (`403 second_factor_required` sinon).\n"
             "- Opérations qui déplacent de l'argent : en-tête `Idempotency-Key` (UUID) "
             "obligatoire ; `201` à la création, `200` si la même clé est rejouée.\n"
             "- Un refus de carte n'est pas une erreur HTTP : `201` avec `status: declined`.\n"

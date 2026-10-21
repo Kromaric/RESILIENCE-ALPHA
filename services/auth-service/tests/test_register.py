@@ -40,7 +40,7 @@ def test_register_then_log_in(client, db):
     login = client.post(
         "/login", json={"email": "nathan@orbe.test", "password": STRONG_PASSWORD}
     ).json()
-    assert login["passkey_enrollment_required"] is True
+    assert login["face_enrollment_required"] is True
     me = client.get("/me", headers=bearer(login["token"]["access_token"])).json()
     assert me["client_id"] == body["client_id"]
 

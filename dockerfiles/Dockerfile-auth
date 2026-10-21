@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+# auth-service (CADRAGE §4.2) — contexte de build : racine du dépôt
+#   docker build -f dockerfiles/Dockerfile-auth -t orbe/auth-service .
+#
+# Embarque le moteur de reconnaissance faciale InsightFace et son modèle pré-entraîné,
+# téléchargé à la construction : aucun accès réseau n'est nécessaire à l'exécution.
+# Modèles InsightFace : usage non commercial uniquement (adapté au démonstrateur).
+
+FROM python:3.12-slim AS build
+# insightface compile une extension C à l'installation
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+WORKDIR /src
+COPY services/auth-service/pyproject.toml ./
+COPY services/auth-service/app ./app
+# insightface installe aussi opencv-python (version graphique, qui exige X11) : on ne garde que
+# la version headless, qui partage le même module cv2
+RUN pip install --no-cache-dir ".[face]" \
+    && pip uninstall -y opencv-python \
+    && pip install --no-cache-dir --force-reinstall --no-deps opencv-python-headless
+
+ARG FACE_MODEL=buffalo_s
+RUN python -c "from insightface.app import FaceAnalysis; \
+FaceAnalysis(name='${FACE_MODEL}', root='/opt/insightface', providers=['CPUExecutionProvider'])" \
+    && rm -f /opt/insightface/models/*.zip
+
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    MPLCONFIGDIR=/tmp/matplotlib
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin orbe
+COPY --from=build /opt/venv /opt/venv
+COPY --from=build /opt/insightface /opt/insightface
+USER 10001
+EXPOSE 8001
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/live', timeout=2)"]
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8001", \
+     "--no-access-log", "--no-server-header"]
