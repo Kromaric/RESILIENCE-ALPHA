@@ -113,6 +113,7 @@ class FaceEnrollRequest(BaseModel):
 
 class FaceVerifyRequest(BaseModel):
     frames: list[str] = Field(min_length=1, max_length=20, description=FRAMES_DESCRIPTION)
+    # Ignoré : la consigne est celle mémorisée par GET /face/challenge (gardé par compatibilité)
     direction: Literal["left", "right"] | None = None
 
 

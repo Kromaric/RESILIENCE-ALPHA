@@ -10,11 +10,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session, utcnow
 from app.face.cipher import CipherError
-from app.face.decision import decide, main_face, random_direction, same_person, select_for_enrollment
+from app.face.decision import (
+    decide,
+    main_face,
+    random_direction,
+    same_person,
+    select_for_enrollment,
+)
 from app.face.service import analyze_frames, count_templates, decode_frames, load_templates
 from app.logging_setup import log_event
 from app.metrics import FACE_ENROLLMENTS, SECOND_FACTOR
 from app.models import Client, ClientApi, ClientFaceTemplate, Session
+from app.routes.auth import (
+    LIVENESS_FAILED,
+    SECOND_FACTOR_FAILED,
+    client_ip,
+    rate_limit,
+    register_failure,
+)
 from app.schemas import (
     ErrorOut,
     FaceChallenge,
@@ -22,10 +35,9 @@ from app.schemas import (
     FaceStatus,
     FaceVerifyRequest,
     FaceVerifyResponse,
-    TokenResponse,
     error,
 )
-from app.sessions import current_session, token_for
+from app.sessions import current_session, token_for, unauthorized
 
 router = APIRouter(prefix="/face", tags=["Visage"])
 logger = logging.getLogger("face")
@@ -85,13 +97,19 @@ async def face_status(
 async def get_face_challenge(
     request: Request,
     current: tuple[dict[str, Any], Session] = Depends(current_session),
+    db: AsyncSession = Depends(get_session),
 ) -> FaceChallenge:
-    state = request.app.state
-    settings = state.settings
+    """Consigne tirée par le serveur et mémorisée dans la session : `POST /face/verify` ne
+    l'accepte qu'une fois. Un client ne peut donc pas choisir le sens de rotation."""
+    _, session = current
+    settings = request.app.state.settings
+    direction = random_direction()
+    await db.execute(update(Session).where(Session.id == session.id).values(challenge=direction))
+    await db.commit()
     return FaceChallenge(
-        direction=random_direction(),
+        direction=direction,
         frames=settings.login_frames,
-        interval_ms=250,
+        interval_ms=settings.login_interval_ms,
     )
 
 
@@ -118,6 +136,22 @@ async def verify_face(
     claims, session = current
     state = request.app.state
     settings = state.settings
+    ip = client_ip(request)
+    rate_limit(request, ip)
+
+    # Consigne de la session (GET /face/challenge), à usage unique ; body.direction est ignoré
+    direction = session.challenge
+    consumed = await db.execute(
+        update(Session)
+        .where(Session.id == session.id, Session.challenge == direction)
+        .values(challenge=None)
+    )
+    await db.commit()
+    if not direction or consumed.rowcount != 1:
+        SECOND_FACTOR.labels(result="no_challenge").inc()
+        raise unauthorized(
+            error("challenge_required", "Demandez une nouvelle consigne (GET /face/challenge).")
+        )
 
     templates = await load_templates(
         db, state.face_cipher, session.client_id, state.face_engine.model_name
@@ -135,7 +169,7 @@ async def verify_face(
     decision = decide(
         [main_face(faces) for faces in per_frame],
         templates,
-        direction=body.direction,
+        direction=direction,
         threshold=settings.face_threshold,
         min_matching_frames=settings.face_min_matching_frames,
         min_turn_degrees=settings.liveness_min_turn_degrees,
@@ -143,6 +177,8 @@ async def verify_face(
     )
 
     if not decision.recognized:
+        # Compte dans le blocage du compte, comme un échec de connexion
+        await register_failure(db, session.client_id, request)
         SECOND_FACTOR.labels(result=decision.reason).inc()
         log_event(
             logger,
@@ -150,13 +186,14 @@ async def verify_face(
             client_id=session.client_id,
             reason=decision.reason,
             best_score=decision.best_score,
+            head_turn=decision.head_turn,
+            opposite_turn=decision.opposite_turn,
+            direction=direction,
+            client_ip=ip,
         )
-        detail = (
-            error("liveness_failed", "Mouvement de la tête non détecté dans le sens demandé.")
-            if decision.reason == "liveness_failed"
-            else error("second_factor_failed", "Visage non reconnu.")
+        raise unauthorized(
+            LIVENESS_FAILED if decision.reason == "liveness_failed" else SECOND_FACTOR_FAILED
         )
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=detail)
 
     await db.execute(
         update(Session)
@@ -278,9 +315,7 @@ async def enroll(
         update(Client).where(Client.id == session.client_id).values(biometric_consent_at=now)
     )
     # Elevate session factors to strong session upon successful enrollment
-    await db.execute(
-        update(Session).where(Session.id == session.id).values(factors="pwd,face")
-    )
+    await db.execute(update(Session).where(Session.id == session.id).values(factors="pwd,face"))
     await db.commit()
     FACE_ENROLLMENTS.labels(result="enrolled").inc()
     log_event(logger, "face_enrolled", client_id=session.client_id, templates=len(encrypted))

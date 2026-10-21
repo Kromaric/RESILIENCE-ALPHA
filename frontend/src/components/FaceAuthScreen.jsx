@@ -5,7 +5,7 @@ import { loginFace, verifyFaceApi, getFaceChallengeApi } from '../services/api';
 
 /**
  * Screen: Biometric 2FA Face Recognition.
- * Handles webcam stream, sequential multi-frame capture (8 frames with liveness head turn),
+ * Handles webcam stream, countdown then sequential multi-frame capture (liveness head turn),
  * challenge direction visual guide (left/right arrow indicator), real-time feedback.
  * Strictly verifies that the camera is active before any capture.
  * No emojis used.
@@ -28,6 +28,8 @@ export default function FaceAuthScreen() {
   // Biometric verification states: 'IDLE', 'SCANNING', 'VERIFIED', 'ERROR'
   const [scanState, setScanState] = useState('IDLE');
   const [capturedCount, setCapturedCount] = useState(0);
+  // Compte à rebours avant la capture : le temps de lire la consigne (0 = capture en cours)
+  const [countdown, setCountdown] = useState(0);
   const [confidence, setConfidence] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -43,8 +45,11 @@ export default function FaceAuthScreen() {
   const isMountedRef = useRef(true);
 
   const direction = faceChallenge?.direction || 'left';
-  const frameCount = faceChallenge?.frames || 8;
-  const intervalMs = faceChallenge?.interval_ms || 250;
+  const frameCount = faceChallenge?.frames || 12;
+  const intervalMs = faceChallenge?.interval_ms || 300;
+  const directionLabel = direction === 'left' ? 'gauche' : 'droite';
+  // L'aperçu est affiché en miroir : tourner vers sa gauche déplace le visage vers la gauche
+  const DirectionArrow = direction === 'left' ? ArrowLeft : ArrowRight;
 
   const isLoginFlow = pending2FA?.type === 'login';
   const isPaymentFlow = pending2FA?.type === 'payment';
@@ -209,6 +214,14 @@ export default function FaceAuthScreen() {
     try {
       const frames = [];
 
+      // Compte à rebours : l'utilisateur lit la consigne avant que la séquence ne commence.
+      // Le serveur mesure la rotation à partir des premières images (tête de face).
+      for (let n = 3; n > 0; n--) {
+        setCountdown(n);
+        await sleep(700);
+      }
+      setCountdown(0);
+
       // Real camera multi-frame capture
       for (let i = 0; i < frameCount; i++) {
         const frameB64 = captureCurrentFrameB64();
@@ -265,7 +278,9 @@ export default function FaceAuthScreen() {
     } catch (err) {
       setScanState('ERROR');
       if (err.code === 'liveness_failed') {
-        setErrorMessage('Test du vivant non validé : tournez lentement la tête dans le sens indiqué.');
+        setErrorMessage(
+          `Mouvement de la tête non détecté : tournez nettement la tête vers la ${directionLabel} pendant la capture.`,
+        );
       } else if (err.code === 'second_factor_failed') {
         setErrorMessage('Visage non reconnu ou non enregistré pour ce compte.');
       } else {
@@ -286,6 +301,7 @@ export default function FaceAuthScreen() {
     sessionId,
     authToken,
     direction,
+    directionLabel,
     completeFaceAuth,
   ]);
 
@@ -369,10 +385,10 @@ export default function FaceAuthScreen() {
             Reconnaissance faciale
           </h2>
           <p className="text-xs text-[#55636a] mt-1 max-w-[280px] leading-relaxed">
-            Positionnez votre visage au centre du cadre et tournez lentement la tête vers la{' '}
-            <strong className="text-[#0e5a6b] font-semibold">
-              {direction === 'left' ? 'gauche' : 'droite'}
-            </strong>.
+            Placez votre visage au centre du cadre. Après le compte à rebours, tournez nettement la
+            tête vers la{' '}
+            <strong className="text-[#0e5a6b] font-semibold">{directionLabel}</strong>, puis
+            revenez de face.
           </p>
         </div>
 
@@ -421,10 +437,24 @@ export default function FaceAuthScreen() {
             )}
 
             {/* Scanning Overlay Animation */}
-            {scanState === 'SCANNING' && cameraStatus === 'ACTIVE' && (
+            {scanState === 'SCANNING' && cameraStatus === 'ACTIVE' && countdown > 0 && (
+              <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white">
+                <span className="text-5xl font-semibold tabular-nums">{countdown}</span>
+                <span className="mt-1 text-xs font-medium">Regardez la caméra, de face</span>
+              </div>
+            )}
+            {scanState === 'SCANNING' && cameraStatus === 'ACTIVE' && countdown === 0 && (
               <div className="absolute inset-0 bg-[#0e5a6b]/20 flex flex-col items-center justify-center">
                 <div className="w-full h-1 bg-[#22c55e] absolute top-0 animate-pulse shadow-[0_0_12px_#22c55e]" />
-                <div className="bg-black/75 px-3 py-1.5 rounded-full text-white text-xs font-mono font-medium backdrop-blur-xs">
+                <div
+                  className={`flex items-center gap-1.5 bg-black/75 px-3 py-2 rounded-full text-white text-sm font-semibold backdrop-blur-xs ${
+                    direction === 'left' ? 'flex-row' : 'flex-row-reverse'
+                  }`}
+                >
+                  <DirectionArrow className="w-5 h-5 animate-pulse" />
+                  <span>Tournez la tête vers la {directionLabel}</span>
+                </div>
+                <div className="mt-2 bg-black/60 px-2.5 py-1 rounded-full text-white text-[11px] font-mono">
                   Capture {capturedCount}/{frameCount}
                 </div>
               </div>
@@ -459,9 +489,7 @@ export default function FaceAuthScreen() {
             <div className="bg-[#dcecef] text-[#0a4552] px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs">
               <ScanFace className="w-3.5 h-3.5" />
               <span>Consigne : Tournez la tête vers la</span>
-              <strong className="underline underline-offset-2">
-                {direction === 'left' ? 'gauche' : 'droite'}
-              </strong>
+              <strong className="underline underline-offset-2">{directionLabel}</strong>
             </div>
           </div>
 

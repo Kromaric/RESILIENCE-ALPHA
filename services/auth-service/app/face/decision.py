@@ -29,10 +29,20 @@ def main_face(observations: list[FaceObservation]) -> FaceObservation | None:
     return max(observations, key=lambda o: o.area) if observations else None
 
 
-def head_turn(yaws: list[float]) -> float:
-    """Mouvement de la tête au fil des images : moyenne du dernier tiers − premier tiers."""
-    third = max(1, len(yaws) // 3)
-    return float(np.mean(yaws[-third:]) - np.mean(yaws[:third]))
+def head_turn(yaws: list[float], expected_sign: int = 1) -> tuple[float, float]:
+    """Rotation de la tête par rapport à la position de départ (moyenne des 2 premières images).
+
+    Renvoie (amplitude dans le sens demandé, amplitude dans le sens opposé), en degrés. Chaque
+    amplitude est la 2ᵉ plus grande de la séquence : un pic isolé (bruit de mesure) ne suffit
+    pas. Tourner puis revenir face à la caméra est accepté : seule l'amplitude atteinte compte.
+    """
+    if len(yaws) < 3:
+        return 0.0, 0.0
+    baseline = float(np.mean(yaws[:2]))
+    excursions = sorted(expected_sign * (yaw - baseline) for yaw in yaws[2:])
+    wanted = max(0.0, excursions[-2] if len(excursions) >= 2 else excursions[-1])
+    opposite = max(0.0, -(excursions[1] if len(excursions) >= 2 else excursions[0]))
+    return float(wanted), float(opposite)
 
 
 @dataclass(frozen=True)
@@ -43,7 +53,8 @@ class Decision:
     template_id: str | None
     matching_frames: int
     faces_seen: int
-    head_turn: float
+    head_turn: float  # amplitude dans le sens demandé (degrés)
+    opposite_turn: float  # amplitude dans le sens opposé
 
 
 def decide(
@@ -59,9 +70,11 @@ def decide(
     """Le test du vivant est évalué indépendamment de l'identité : son résultat ne dit pas
     si une photo ressemble au titulaire du compte."""
     seen = [f for f in faces if f is not None]
-    turn = head_turn([f.yaw for f in seen]) if seen else 0.0
     expected_sign = 1 if (direction == "left") == left_is_positive_yaw else -1
-    alive = len(seen) >= min_matching_frames and turn * expected_sign >= min_turn_degrees
+    turn, opposite = head_turn([f.yaw for f in seen], expected_sign)
+    # Le mouvement principal doit aller dans le sens demandé (une vidéo qui balaie des deux
+    # côtés ne passe pas)
+    alive = len(seen) >= min_matching_frames and turn >= min_turn_degrees and turn > opposite
 
     best_score, matching, winners = None, 0, Counter()
     if templates and seen:
@@ -90,6 +103,7 @@ def decide(
         matching_frames=matching,
         faces_seen=len(seen),
         head_turn=round(turn, 1),
+        opposite_turn=round(opposite, 1),
     )
 
 

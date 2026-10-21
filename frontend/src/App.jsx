@@ -13,17 +13,18 @@ import BottomNav from './components/BottomNav';
 
 /**
  * Main application router container.
- * Enforces the exact 390x844 mobile frame with IBM Plex Sans typography.
+ * Sur téléphone : plein écran (hauteur visible réelle, zones sûres des encoches).
+ * Sur ordinateur (≥ 640 px) : cadre de téléphone 390x844 centré, pour la démonstration.
  * No emojis used.
  */
 function MobileApp() {
   const { currentScreen } = useApp();
 
   return (
-    <div className="min-h-screen bg-[#faf9f5] flex items-center justify-center p-4 relative antialiased selection:bg-[#dcecef]">
-      {/* Mobile Device Container (iPhone 14 / standard 390x844) */}
+    <div className="min-h-dvh bg-[#faf9f5] sm:flex sm:items-center sm:justify-center sm:p-4 relative antialiased selection:bg-[#dcecef]">
+      {/* Téléphone : plein écran. Ordinateur : cadre 390x844 (iPhone 14), réduit si la fenêtre est basse */}
       <main
-        className="w-[390px] h-[844px] bg-[#f5f6f4] text-[#0f1a1d] flex flex-col overflow-hidden rounded-2xl shadow-xl border border-[#d5dcdf] relative font-sans text-[15px] leading-[22px]"
+        className="w-full h-dvh pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:pt-0 sm:pb-0 sm:w-[390px] sm:h-[844px] sm:max-h-[calc(100dvh-2rem)] bg-[#f5f6f4] text-[#0f1a1d] flex flex-col overflow-hidden sm:rounded-2xl sm:shadow-xl sm:border sm:border-[#d5dcdf] relative font-sans text-[15px] leading-[22px]"
       >
         {/* Active Screen Rendering */}
         {currentScreen === 'LOGIN' && <LoginScreen />}
