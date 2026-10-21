@@ -50,12 +50,18 @@ services:
     image: grafana/grafana-oss:latest
     container_name: grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"   # PC Hôte uniquement (lecture anonyme activée ci-dessous)
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana-provisioning:/etc/grafana/provisioning
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
+      # Panneaux intégrés dans le dashboard Orbe : intégration autorisée, lecture anonyme
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_USERS_ALLOW_SIGN_UP=false
+    secrets: [grafana_admin_password]
     restart: unless-stopped
 
   safeline-waf:
@@ -226,6 +232,7 @@ secrets:
   remediation_db_password: { file: ../secrets/remediation_db_password }
   exporter_db_password:    { file: ../secrets/exporter_db_password }
   bo_db_password:          { file: ../secrets/bo_db_password }
+  grafana_admin_password:  { file: ../secrets/grafana_admin_password }
   probe_api_key:           { file: ../secrets/probe_api_key }
   jwt_private_key:         { file: ../secrets/jwt_private_key.pem }
   jwt_public_key:          { file: ../secrets/jwt_public_key.pem }

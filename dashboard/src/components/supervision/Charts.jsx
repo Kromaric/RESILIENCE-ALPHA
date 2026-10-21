@@ -1,11 +1,10 @@
 import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar,
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea, ReferenceLine,
 } from 'recharts'
 import { colors } from '../../theme'
-import { formatHour } from '../../api/format'
 
-const TICKS = ['10:20', '10:30', '10:40', '10:50']
+const ticks = (points) => points.filter((_, i) => i % 10 === 0).map((p) => p.time)
 const axis = { axisLine: false, tickLine: false, tick: { fill: colors.muted, fontSize: 11 } }
 const tooltipStyle = {
   contentStyle: { background: colors.surface, border: `1px solid ${colors.line}`, fontSize: 12 },
@@ -30,7 +29,7 @@ export function LatencyChart({ points, incident }) {
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={points} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
         <CartesianGrid stroke={colors.line} vertical={false} />
-        <XAxis dataKey="time" ticks={TICKS} {...axis} />
+        <XAxis dataKey="time" ticks={ticks(points)} {...axis} />
         <YAxis {...axis} tickFormatter={(v) => (v >= 1000 ? `${v / 1000} s` : `${v}`)} />
         <Tooltip {...tooltipStyle} formatter={(v) => [`${v} ms`, 'Latence p95']} />
         {IncidentArea({ incident })}
@@ -45,7 +44,7 @@ export function AnomalyChart({ points, incident }) {
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={points} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
         <CartesianGrid stroke={colors.line} vertical={false} />
-        <XAxis dataKey="time" ticks={TICKS} {...axis} />
+        <XAxis dataKey="time" ticks={ticks(points)} {...axis} />
         <YAxis domain={[0, 1]} {...axis} />
         <Tooltip {...tooltipStyle} formatter={(v) => [v, 'Score']} />
         {IncidentArea({ incident })}
@@ -61,20 +60,20 @@ export function AnomalyChart({ points, incident }) {
   )
 }
 
-export function TransactionsChart({ points }) {
+export function TransactionsChart({ points, incident }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={points} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
         <CartesianGrid stroke={colors.line} vertical={false} />
-        <XAxis dataKey="time" tickFormatter={formatHour} interval={5} {...axis} />
-        <YAxis allowDecimals={false} {...axis} />
-        <Tooltip
-          {...tooltipStyle}
-          cursor={{ fill: colors.line }}
-          labelFormatter={formatHour}
-          formatter={(v) => [v, 'Transactions']}
-        />
-        <Bar dataKey="value" fill={colors.accent} isAnimationActive={false} />
+        <XAxis dataKey="time" ticks={ticks(points)} {...axis} />
+        <YAxis {...axis} />
+        <Tooltip {...tooltipStyle} cursor={{ fill: colors.line }} formatter={(v) => [v, 'Transactions / min']} />
+        {IncidentArea({ incident })}
+        <Bar dataKey="tx" isAnimationActive={false}>
+          {points.map((p) => (
+            <Cell key={p.time} fill={p.incident ? colors.danger : colors.accent} />
+          ))}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   )

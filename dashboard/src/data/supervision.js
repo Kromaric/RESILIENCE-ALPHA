@@ -22,6 +22,8 @@ export const phases = {
     kpis: [
       { label: 'Disponibilité (24 h)', value: '99,98 %', sub: 'Objectif ≥ 99,5 % tenu' },
       { label: 'Latence p95', value: '182 ms', sub: 'Seuil 800 ms' },
+      { label: 'Erreurs 5xx', value: '0,1 %', sub: 'Seuil 2 %' },
+      { label: 'Transactions / min', value: '121', sub: 'Volume nominal' },
       { label: "Score d'anomalie", value: '0,09', sub: 'Sous le seuil 0,80', tone: 'ok' },
       { label: 'MTTR dernier incident', value: '3 min 40 s', sub: 'INC-0006', tone: 'ok' },
     ],
@@ -42,6 +44,8 @@ export const phases = {
     kpis: [
       { label: 'Disponibilité (24 h)', value: '99,41 %', sub: 'Objectif ≥ 99,5 % menacé', tone: 'warn' },
       { label: 'Latence p95', value: '2 140 ms', sub: 'Seuil 800 ms dépassé', tone: 'danger' },
+      { label: 'Erreurs 5xx', value: '7,8 %', sub: 'Seuil 2 % dépassé', tone: 'danger' },
+      { label: 'Transactions / min', value: '34', sub: 'Volume en chute', tone: 'danger' },
       { label: "Score d'anomalie", value: '0,94', sub: 'Au-dessus du seuil 0,80', tone: 'danger' },
       { label: 'MTTR dernier incident', value: 'en cours', sub: 'INC-0007', tone: 'warn' },
     ],
@@ -62,6 +66,8 @@ export const phases = {
     kpis: [
       { label: 'Disponibilité (24 h)', value: '99,69 %', sub: 'Objectif ≥ 99,5 % tenu' },
       { label: 'Latence p95', value: '196 ms', sub: 'Seuil 800 ms' },
+      { label: 'Erreurs 5xx', value: '0,3 %', sub: 'Seuil 2 %' },
+      { label: 'Transactions / min', value: '119', sub: 'Volume nominal' },
       { label: "Score d'anomalie", value: '0,11', sub: 'Retour sous le seuil', tone: 'ok' },
       { label: 'MTTR dernier incident', value: '2 min 05 s', sub: 'INC-0007', tone: 'ok' },
     ],

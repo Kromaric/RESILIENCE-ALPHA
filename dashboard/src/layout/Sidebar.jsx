@@ -2,17 +2,12 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { Activity, FileText, MessageSquare, ArrowUpRight, LogOut } from 'lucide-react'
 import { conversations } from '../data/assistant'
 import { useAuth } from '../auth/AuthContext'
+import { useApi } from '../api/useApi'
 
 const espace = [
   { to: '/', label: 'Supervision', icon: Activity },
   { to: '/docs', label: 'Documentation', icon: FileText },
   { to: '/assistant', label: 'Assistant RAG', icon: MessageSquare },
-]
-
-const outils = [
-  { label: 'Grafana', href: 'http://localhost:3000' },
-  { label: 'Prometheus', href: 'http://localhost:9090' },
-  { label: 'Loki — journaux', href: 'http://localhost:3100' },
 ]
 
 function SectionLabel({ children }) {
@@ -27,6 +22,8 @@ export default function Sidebar() {
   const { pathname } = useLocation()
   const onAssistant = pathname === '/assistant'
   const { operator, logout } = useAuth()
+  // Liens des outils (Grafana, Prometheus…) : adresses vues par le navigateur, fournies par bo-api
+  const outils = useApi('/bo/grafana').data?.tools ?? []
 
   return (
     <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-line bg-bg p-4 md:sticky md:top-0 md:h-screen">
@@ -73,7 +70,7 @@ export default function Sidebar() {
         <>
           <SectionLabel>Outils</SectionLabel>
           <div className="flex flex-col gap-1">
-            {outils.map(({ label, href }) => (
+            {outils.map(({ title: label, url: href }) => (
               <a
                 key={label}
                 href={href}

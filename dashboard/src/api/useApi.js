@@ -3,10 +3,12 @@ import { api } from './client'
 
 // Lit une route GET de bo-api, et la relit toutes les `refreshMs` millisecondes si demandé.
 // En cas d'échec d'un rafraîchissement, la dernière donnée reçue reste affichée.
+// `path` à null : aucun appel (par exemple en mode démo).
 export function useApi(path, { refreshMs } = {}) {
   const [state, setState] = useState({ path, data: undefined, error: null })
 
   useEffect(() => {
+    if (!path) return
     let cancelled = false
     async function load() {
       try {
@@ -28,6 +30,6 @@ export function useApi(path, { refreshMs } = {}) {
   return {
     data: current.data,
     error: current.error,
-    loading: current.data === undefined && !current.error,
+    loading: Boolean(path) && current.data === undefined && !current.error,
   }
 }

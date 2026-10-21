@@ -25,6 +25,75 @@ from app.db import metadata
 from app.main import create_app
 
 AUTH = "http://auth.test"
+PROMETHEUS, LOKI = "http://prometheus.test", "http://loki.test"
+REMEDIATION, ASSISTANT = "http://remediation.test", "http://assistant.test"
+
+
+class FakeUpstreams:
+    """Prometheus, Loki, moteur de remédiation et assistant simulés.
+
+    - `prom` : sous-chaîne de la requête PromQL → valeur (la première qui correspond) ;
+      une valeur None simule « aucune série ».
+    - `down` : noms des services injoignables (prometheus, loki, remediation, assistant).
+    """
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.prom: dict[str, float | None] = {}
+        self.loki_lines: list[tuple[int, dict, str]] = []
+        self.status: dict | None = None
+        self.incidents: dict | list | None = None
+        self.answer: dict | None = None
+        self.down: set[str] = set()
+        self.queries: list[str] = []
+
+    def _value(self, query: str) -> float | None:
+        for key, value in self.prom.items():
+            if key in query:
+                return value
+        return None
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host.split(".")[0]
+        if host in self.down:
+            raise httpx.ConnectError(f"{host} injoignable", request=request)
+        path, params = request.url.path, request.url.params
+        if host == "prometheus":
+            query = params["query"]
+            self.queries.append(query)
+            value = self._value(query)
+            if path.endswith("/query"):
+                result = [] if value is None else [{"metric": {}, "value": [0, str(value)]}]
+                return httpx.Response(
+                    200, json={"data": {"resultType": "vector", "result": result}}
+                )
+            start, end, step = float(params["start"]), float(params["end"]), int(params["step"])
+            values = [[t, str(value)] for t in range(int(start), int(end) + 1, step)]
+            result = [] if value is None else [{"metric": {}, "values": values}]
+            return httpx.Response(200, json={"data": {"resultType": "matrix", "result": result}})
+        if host == "loki":
+            self.queries.append(params["query"])
+            streams = [
+                {"stream": labels, "values": [[str(ts), line]]}
+                for ts, labels, line in self.loki_lines
+            ]
+            return httpx.Response(200, json={"data": {"resultType": "streams", "result": streams}})
+        if host == "remediation":
+            if path == "/status" and self.status is not None:
+                return httpx.Response(200, json=self.status)
+            if path == "/incidents" and self.incidents is not None:
+                return httpx.Response(200, json=self.incidents)
+            if path.startswith("/incidents/") and isinstance(self.incidents, dict):
+                found = [i for i in self.incidents["items"] if i["id"] == path.rsplit("/", 1)[1]]
+                if found:
+                    return httpx.Response(200, json=found[0])
+            return httpx.Response(404, json={"detail": "not found"})
+        if host == "assistant":
+            self.queries.append(request.content.decode())
+            return httpx.Response(200, json=self.answer)
+        return httpx.Response(404)
 
 
 class FakeAuthService:
@@ -125,7 +194,12 @@ def auth(private_key):
 
 
 @pytest.fixture(scope="session")
-def app(tmp_path_factory, private_key, auth):
+def upstreams():
+    return FakeUpstreams()
+
+
+@pytest.fixture(scope="session")
+def app(tmp_path_factory, private_key, auth, upstreams):
     key_file = tmp_path_factory.mktemp("secrets") / "jwt_public_key.pem"
     key_file.write_bytes(
         private_key.public_key().public_bytes(
@@ -135,16 +209,29 @@ def app(tmp_path_factory, private_key, auth):
     settings = Settings(
         jwt_public_key_file=key_file,
         auth_url=AUTH,
+        prometheus_url=PROMETHEUS,
+        loki_url=LOKI,
+        remediation_url=REMEDIATION,
+        assistant_url=ASSISTANT,
+        grafana_public_url="http://grafana.test:3000",
+        loki_selector='{container=~"orbe-.+"}',
+        assistant_rate_per_operator=3,
         enable_docs=True,
         session_cache_seconds=60,
         page_size_max=3,
     )
+
+    def dispatch(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "auth.test":
+            return auth.handler(request)
+        return upstreams.handler(request)
+
     engine = create_async_engine(
         "sqlite+aiosqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
     )
     return create_app(
         settings,
-        http=httpx.AsyncClient(transport=httpx.MockTransport(auth.handler)),
+        http=httpx.AsyncClient(transport=httpx.MockTransport(dispatch)),
         engine=engine,
     )
 
@@ -162,8 +249,12 @@ def client(app):
 
 
 @pytest.fixture(autouse=True)
-def clean_state(app, auth, client):
+def clean_state(app, auth, upstreams, client):
     auth.reset()
+    upstreams.reset()
+    app.state.ask_limiter = type(app.state.ask_limiter)(
+        app.state.settings.assistant_rate_per_operator
+    )
     app.state.operator_sessions._cache.clear()
     client.portal.call(_reset_schema, app.state.engine)
 

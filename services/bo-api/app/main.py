@@ -16,9 +16,11 @@ from app.config import Settings
 from app.db import make_engine
 from app.errors import error
 from app.logging_setup import configure_logging, log_event, request_id_var
-from app.routes import auth, data, health
+from app.ratelimit import SlidingWindowLimiter
+from app.routes import auth, control, data, health, supervision
 from app.routes.auth import client_ip
 from app.security import OperatorSessions, TokenVerifier
+from app.upstream import ControlPlane, Loki, Prometheus
 
 logger = logging.getLogger("http")
 QUIET_PATHS = {"/metrics", "/health/live", "/health/ready"}
@@ -60,6 +62,10 @@ def create_app(
         openapi_tags=[
             {"name": "Connexion", "description": "Connexion des opérateurs"},
             {
+                "name": "Supervision",
+                "description": "État des services, indicateurs, courbes, ressources, journaux",
+            },
+            {
                 "name": "Données applicatives",
                 "description": "Clients, opérations, demandes et comptabilité (lecture seule, "
                 "email et téléphone masqués)",
@@ -78,6 +84,10 @@ def create_app(
     app.state.tokens = TokenVerifier.from_pem_file(
         settings.jwt_public_key_file, issuer=settings.jwt_issuer, audience=settings.jwt_audience
     )
+    app.state.prometheus = Prometheus(http, settings.prometheus_url)
+    app.state.loki = Loki(http, settings.loki_url)
+    app.state.control_plane = ControlPlane(http, settings)
+    app.state.ask_limiter = SlidingWindowLimiter(settings.assistant_rate_per_operator)
     app.state.operator_sessions = OperatorSessions(
         http, settings.auth_url, settings.session_cache_seconds
     )
@@ -148,7 +158,9 @@ def create_app(
             request_id_var.reset(token)
 
     app.include_router(auth.router)
+    app.include_router(supervision.router)
     app.include_router(data.router)
+    app.include_router(control.router)
     app.include_router(health.router)
 
     Instrumentator(excluded_handlers=["/metrics", "/health/.*"]).instrument(app).expose(

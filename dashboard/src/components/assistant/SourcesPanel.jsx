@@ -1,29 +1,27 @@
 import Card from '../Card'
-import { sources } from '../../data/assistant'
 
-export default function SourcesPanel() {
+// Extraits de documentation cités par la dernière réponse de l'assistant
+export default function SourcesPanel({ sources }) {
   return (
     <Card>
       <div className="mb-3 flex items-baseline justify-between">
         <h3 className="text-sm font-medium text-gray-100">Extraits retrouvés</h3>
-        <span className="font-mono text-[11px] text-muted">top 4</span>
+        {sources.length > 0 && <span className="font-mono text-[11px] text-muted">{sources.length}</span>}
       </div>
-      <div className="space-y-2">
-        {sources.map((s) => (
-          <div key={s.n} className="rounded-md border border-line bg-bg p-3">
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-100">
-                <span className="font-mono text-accent">[{s.n}]</span> {s.title}
-              </span>
-              <span className="font-mono text-muted">{s.score.toFixed(2).replace('.', ',')}</span>
+      {sources.length === 0 ? (
+        <p className="text-xs text-muted">Les extraits utilisés pour la dernière réponse s'afficheront ici.</p>
+      ) : (
+        <div className="space-y-2">
+          {sources.map((s, i) => (
+            <div key={i} className="rounded-md border border-line bg-bg p-3">
+              <p className="text-xs text-gray-100">
+                <span className="font-mono text-accent">[{i + 1}]</span> {s.doc}
+              </p>
+              <p className="mt-1.5 text-[11px] text-muted">« {s.extrait} »</p>
             </div>
-            <p className="mt-1.5 text-[11px] text-muted">« {s.quote} »</p>
-            <div className="mt-2 h-1 rounded-full bg-line">
-              <div className="h-full rounded-full bg-accent" style={{ width: `${s.score * 100}%` }} />
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }

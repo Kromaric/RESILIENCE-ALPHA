@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import Card from '../Card'
 
 const levelColor = {
+  DEBUG: 'text-muted',
   INFO: 'text-muted',
   WARN: 'text-warn',
   ERROR: 'text-danger',
@@ -9,7 +10,7 @@ const levelColor = {
   ACTION: 'text-accent',
 }
 
-export default function LogViewer({ logs }) {
+export default function LogViewer({ logs, empty = 'Aucun journal sur la période.' }) {
   const boxRef = useRef(null)
 
   // Défile en bas à chaque nouveau lot de journaux
@@ -25,8 +26,9 @@ export default function LogViewer({ logs }) {
       </div>
       <div ref={boxRef} className="max-h-60 overflow-auto rounded-md border border-line bg-bg p-3 font-mono text-[11px]">
         <div className="min-w-[520px] space-y-1.5">
-          {logs.map((log) => (
-            <div key={log.time} className="grid grid-cols-[95px_55px_90px_1fr] gap-2">
+          {logs.length === 0 && <p className="text-muted">{empty}</p>}
+          {logs.map((log, i) => (
+            <div key={`${log.ts ?? log.time}-${i}`} className="grid grid-cols-[95px_55px_90px_1fr] gap-2">
               <span className="text-muted">{log.time}</span>
               <span className={levelColor[log.level]}>{log.level}</span>
               <span className="text-gray-400">{log.source}</span>

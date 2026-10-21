@@ -7,6 +7,7 @@ const statusBadge = {
   restored: { tone: 'ok', label: 'Rétabli', icon: Check },
   warn: { tone: 'warn', label: 'Sollicité' },
   down: { tone: 'danger', label: 'Incident' },
+  unknown: { tone: 'unknown', label: 'Sans mesure' },
 }
 
 export default function ServiceCard({ name, desc, status, metric }) {

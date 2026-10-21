@@ -153,6 +153,298 @@
         ]
       }
     },
+    "/bo/supervision/overview": {
+      "get": {
+        "tags": [
+          "Supervision"
+        ],
+        "summary": "État général et indicateurs",
+        "description": "Badge d'état, bannière et les 6 indicateurs de la page Supervision.",
+        "operationId": "overview_bo_supervision_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Overview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/bo/supervision/services": {
+      "get": {
+        "tags": [
+          "Supervision"
+        ],
+        "summary": "État des services",
+        "description": "Une carte par service : `ok`, `warn`, `down`, `restored` (rétabli par la remédiation)\nou `unknown` (pas de mesure).",
+        "operationId": "services_bo_supervision_services_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicesOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/bo/supervision/series": {
+      "get": {
+        "tags": [
+          "Supervision"
+        ],
+        "summary": "Courbes : latence, score d'anomalie, transactions",
+        "description": "Une mesure par minute. `incident` marque les minutes de l'incident en cours ou du\ndernier incident (bornes x1 / x2 pour la zone grisée des graphiques).",
+        "operationId": "series_bo_supervision_series_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "minutes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 360,
+              "minimum": 5,
+              "description": "fenêtre, une mesure par minute",
+              "default": 30,
+              "title": "Minutes"
+            },
+            "description": "fenêtre, une mesure par minute"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupervisionSeries"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bo/supervision/resources": {
+      "get": {
+        "tags": [
+          "Supervision"
+        ],
+        "summary": "Ressources du PC Hôte",
+        "description": "CPU, mémoire, disque et réseau entrant (node-exporter).",
+        "operationId": "resources_bo_supervision_resources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcesOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/bo/supervision/logs": {
+      "get": {
+        "tags": [
+          "Supervision"
+        ],
+        "summary": "Derniers journaux",
+        "description": "Journaux des services (Loki), plus récents d'abord. Les identifiants, adresses IP et\nemails sont retirés : seuls l'événement et quelques champs techniques sont affichés.",
+        "operationId": "logs_bo_supervision_logs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "warn",
+                "error"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Level"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z0-9-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "name": "minutes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 15,
+              "title": "Minutes"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "hide_requests",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "masquer les journaux d'accès HTTP",
+              "default": true,
+              "title": "Hide Requests"
+            },
+            "description": "masquer les journaux d'accès HTTP"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/bo/data/summary": {
       "get": {
         "tags": [
@@ -990,6 +1282,280 @@
           }
         }
       }
+    },
+    "/bo/incidents": {
+      "get": {
+        "tags": [
+          "Incidents, assistant et Grafana"
+        ],
+        "summary": "Incidents (moteur de remédiation)",
+        "description": "Liste du moteur de remédiation, relayée telle quelle (format défini par le moteur).",
+        "operationId": "incidents_bo_incidents_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Incidents Bo Incidents Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service interrogé indisponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bo/incidents/{incident_id}": {
+      "get": {
+        "tags": [
+          "Incidents, assistant et Grafana"
+        ],
+        "summary": "Détail d'un incident : étapes, actions, vérification",
+        "operationId": "incident_bo_incidents__incident_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 40,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Incident Bo Incidents  Incident Id  Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service interrogé indisponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Incident inconnu",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bo/assistant/ask": {
+      "post": {
+        "tags": [
+          "Incidents, assistant et Grafana"
+        ],
+        "summary": "Poser une question à l'assistant opérateur",
+        "description": "Relayée à assistant-rag (`POST /ask`), qui répond à partir de la documentation et\ncite ses sources. Peut prendre plusieurs secondes (modèle local).",
+        "operationId": "ask_bo_assistant_ask_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service interrogé indisponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Réservé au rôle « operator »",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de questions (en-tête Retry-After)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/bo/grafana": {
+      "get": {
+        "tags": [
+          "Incidents, assistant et Grafana"
+        ],
+        "summary": "Liens Grafana et panneaux à intégrer",
+        "description": "`panels[].embed_url` se place dans une `<iframe>` (Grafana autorise l'intégration et\nl'accès anonyme en lecture seule). `tools` remplace les liens codés en dur de la barre\nlatérale.",
+        "operationId": "grafana_bo_grafana_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrafanaOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, invalide ou révoqué",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1022,6 +1588,60 @@
         ],
         "title": "AccountMismatch"
       },
+      "AskRequest": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 3,
+            "title": "Question"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question"
+        ],
+        "title": "AskRequest"
+      },
+      "AskResponse": {
+        "properties": {
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/AskSource"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "answer",
+          "sources"
+        ],
+        "title": "AskResponse"
+      },
+      "AskSource": {
+        "properties": {
+          "doc": {
+            "type": "string",
+            "title": "Doc"
+          },
+          "extrait": {
+            "type": "string",
+            "title": "Extrait"
+          }
+        },
+        "type": "object",
+        "required": [
+          "doc",
+          "extrait"
+        ],
+        "title": "AskSource"
+      },
       "BalancesSummary": {
         "properties": {
           "clients_total_cents": {
@@ -1042,6 +1662,35 @@
           "counterparts_cents"
         ],
         "title": "BalancesSummary"
+      },
+      "Banner": {
+        "properties": {
+          "tone": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warn",
+              "danger",
+              "unknown"
+            ],
+            "title": "Tone"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "meta": {
+            "type": "string",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tone",
+          "text",
+          "meta"
+        ],
+        "title": "Banner"
       },
       "Card": {
         "properties": {
@@ -1341,6 +1990,84 @@
         ],
         "title": "ErrorOut"
       },
+      "GrafanaLink": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "url"
+        ],
+        "title": "GrafanaLink"
+      },
+      "GrafanaOut": {
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "dashboards": {
+            "items": {
+              "$ref": "#/components/schemas/GrafanaLink"
+            },
+            "type": "array",
+            "title": "Dashboards"
+          },
+          "panels": {
+            "items": {
+              "$ref": "#/components/schemas/GrafanaPanel"
+            },
+            "type": "array",
+            "title": "Panels"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/GrafanaLink"
+            },
+            "type": "array",
+            "title": "Tools"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_url",
+          "dashboards",
+          "panels",
+          "tools"
+        ],
+        "title": "GrafanaOut"
+      },
+      "GrafanaPanel": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "embed_url": {
+            "type": "string",
+            "title": "Embed Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "embed_url"
+        ],
+        "title": "GrafanaPanel"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1353,6 +2080,81 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "IncidentWindow": {
+        "properties": {
+          "x1": {
+            "type": "string",
+            "title": "X1"
+          },
+          "x2": {
+            "type": "string",
+            "title": "X2"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x1",
+          "x2"
+        ],
+        "title": "IncidentWindow"
+      },
+      "Kpi": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw"
+          },
+          "sub": {
+            "type": "string",
+            "title": "Sub"
+          },
+          "tone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "warn",
+                  "danger",
+                  "unknown"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "value",
+          "raw",
+          "sub"
+        ],
+        "title": "Kpi"
       },
       "LedgerCheck": {
         "properties": {
@@ -1447,6 +2249,47 @@
         ],
         "title": "LedgerLine"
       },
+      "LogLine": {
+        "properties": {
+          "time": {
+            "type": "string",
+            "title": "Time"
+          },
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "DEBUG",
+              "INFO",
+              "WARN",
+              "ERROR",
+              "ALERT",
+              "ACTION"
+            ],
+            "title": "Level"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "time",
+          "ts",
+          "level",
+          "source",
+          "msg"
+        ],
+        "title": "LogLine"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -1474,6 +2317,22 @@
             "password": "demo-password"
           }
         ]
+      },
+      "LogsOut": {
+        "properties": {
+          "logs": {
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            },
+            "type": "array",
+            "title": "Logs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "logs"
+        ],
+        "title": "LogsOut"
       },
       "MeResponse": {
         "properties": {
@@ -1563,6 +2422,47 @@
           "decline_reasons"
         ],
         "title": "OperationsWindow"
+      },
+      "Overview": {
+        "properties": {
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StatusBadge"
+          },
+          "banner": {
+            "$ref": "#/components/schemas/Banner"
+          },
+          "kpis": {
+            "items": {
+              "$ref": "#/components/schemas/Kpi"
+            },
+            "type": "array",
+            "title": "Kpis"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "up",
+                "down"
+              ]
+            },
+            "type": "object",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_at",
+          "status",
+          "banner",
+          "kpis",
+          "sources"
+        ],
+        "title": "Overview"
       },
       "Party": {
         "properties": {
@@ -1743,6 +2643,52 @@
         ],
         "title": "RequestsSummary"
       },
+      "Resource": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "value",
+          "percent"
+        ],
+        "title": "Resource"
+      },
+      "ResourcesOut": {
+        "properties": {
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            },
+            "type": "array",
+            "title": "Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resources"
+        ],
+        "title": "ResourcesOut"
+      },
       "Series": {
         "properties": {
           "metric": {
@@ -1779,6 +2725,65 @@
         ],
         "title": "Series"
       },
+      "SeriesMinute": {
+        "properties": {
+          "time": {
+            "type": "string",
+            "title": "Time"
+          },
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "incident": {
+            "type": "boolean",
+            "title": "Incident"
+          },
+          "latency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency"
+          },
+          "anomaly": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anomaly"
+          },
+          "tx": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tx"
+          }
+        },
+        "type": "object",
+        "required": [
+          "time",
+          "ts",
+          "incident",
+          "latency",
+          "anomaly",
+          "tx"
+        ],
+        "title": "SeriesMinute"
+      },
       "SeriesPoint": {
         "properties": {
           "time": {
@@ -1796,6 +2801,86 @@
           "value"
         ],
         "title": "SeriesPoint"
+      },
+      "ServiceCard": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "desc": {
+            "type": "string",
+            "title": "Desc"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warn",
+              "down",
+              "restored",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "metric": {
+            "type": "string",
+            "title": "Metric"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "desc",
+          "status",
+          "metric"
+        ],
+        "title": "ServiceCard"
+      },
+      "ServicesOut": {
+        "properties": {
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceCard"
+            },
+            "type": "array",
+            "title": "Services"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_at",
+          "services"
+        ],
+        "title": "ServicesOut"
+      },
+      "StatusBadge": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warn",
+              "danger",
+              "unknown"
+            ],
+            "title": "Tone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "tone"
+        ],
+        "title": "StatusBadge"
       },
       "Summary": {
         "properties": {
@@ -1829,6 +2914,33 @@
           "balances"
         ],
         "title": "Summary"
+      },
+      "SupervisionSeries": {
+        "properties": {
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesMinute"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "incident": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IncidentWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "points",
+          "incident"
+        ],
+        "title": "SupervisionSeries"
       },
       "TokenResponse": {
         "properties": {
@@ -2192,6 +3304,10 @@
     {
       "name": "Connexion",
       "description": "Connexion des opérateurs"
+    },
+    {
+      "name": "Supervision",
+      "description": "État des services, indicateurs, courbes, ressources, journaux"
     },
     {
       "name": "Données applicatives",

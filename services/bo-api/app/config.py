@@ -48,7 +48,25 @@ class Settings(BaseSettings):
     assistant_url: str = "http://assistant-rag:8005"
     # Adresse de Grafana vue par le navigateur de l'opérateur (liens et panneaux intégrés)
     grafana_public_url: str = "http://localhost:3000"
+    grafana_dashboard_uid: str = "orbe-supervision"
+    prometheus_public_url: str = "http://localhost:9090"
     upstream_timeout_seconds: float = 3.0
+    assistant_timeout_seconds: float = 60.0  # un LLM local peut mettre plusieurs secondes
+    assistant_rate_per_operator: int = 10  # questions par minute et par opérateur
+
+    # Supervision
+    display_timezone: str = "Europe/Paris"  # heures affichées sur les graphiques
+    payment_job: str = "payment-service"  # job Prometheus des services surveillés
+    auth_job: str = "auth-service"
+    anomaly_target: str = "payment"  # label target du score d'anomalie (detector-ml)
+    # Sélecteur LogQL des journaux affichés (conteneurs de la plateforme)
+    loki_selector: str = '{container=~"oorbe-.+"}'
+    availability_objective_percent: float = 99.5
+    latency_threshold_ms: float = 800.0
+    error_rate_threshold: float = 0.02
+    anomaly_threshold: float = 0.80
+    disk_mountpoint: str = "/"  # Docker Desktop : /var/lib (disque des conteneurs)
+    network_reference_bytes_per_second: float = 12_500_000.0  # 100 Mbit/s = 100 % de la jauge
 
     def sqlalchemy_url(self) -> str | URL:
         if self.database_url:

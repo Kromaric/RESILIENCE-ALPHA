@@ -7,13 +7,14 @@ const icons = {
   pending: <Circle size={18} className="text-line" />,
 }
 
-export default function RemediationChain({ steps, incidentId }) {
+export default function RemediationChain({ steps, incidentId, notice }) {
   return (
     <Card>
       <div className="mb-4 flex items-baseline justify-between">
         <h3 className="text-sm font-medium text-gray-100">Chaîne de remédiation</h3>
         <p className="font-mono text-[11px] text-muted">{incidentId ?? 'aucun incident'}</p>
       </div>
+      {notice && <p className="text-xs text-muted">{notice}</p>}
       <ol className="space-y-4">
         {steps.map((step) => (
           <li key={step.title} className={`flex gap-3 ${step.status === 'pending' ? 'opacity-40' : ''}`}>

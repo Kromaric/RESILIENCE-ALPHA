@@ -1,7 +1,7 @@
 import Card from '../Card'
 import LiveTag from './LiveTag'
 
-const toneText = { ok: 'text-ok', danger: 'text-danger', warn: 'text-warn' }
+const toneText = { ok: 'text-ok', danger: 'text-danger', warn: 'text-warn', unknown: 'text-muted' }
 
 export default function KpiCard({ label, value, sub, tone, live = false }) {
   return (

@@ -42,8 +42,11 @@ services/auth-service/.venv/Scripts/python scripts/create_operator.py prenom@orb
 
 ## Brancher le dashboard (pour le front)
 
-- En développement : `docker compose -f docker-compose.dev.yml up -d`, puis le dashboard avec
-  `npm run dev` ; appeler `http://localhost:8006` (CORS ouvert pour `http://localhost:5173`).
+- En développement : `docker compose -f docker-compose.dev.yml --profile obs up -d` (le profil
+  `obs` ajoute Prometheus, Loki, promtail, Grafana et node-exporter ; sans lui, la supervision
+  répond « indisponible »), puis le dashboard avec `npm run dev` ; appeler
+  `http://localhost:8006` (CORS ouvert pour `http://localhost:5173`). Grafana :
+  http://localhost:3000 (admin : `secrets/grafana_admin_password`).
 - Contrat complet et essais : http://localhost:8006/docs.
 - En démonstration : le Nginx du dashboard relaie `/bo/` vers `oorbe-bo-api:8006` (même
   origine, pas de CORS).
@@ -73,8 +76,38 @@ et 100 au plus. Chaque appel d'une route `operator` est **journalisé** (`person
 opérateur, ressource, client), à destination du SOC. Base indisponible :
 `503 database_unavailable`.
 
-Routes de supervision (état, indicateurs, séries, ressources, journaux, incidents, Grafana,
-assistant) : à venir, au format des fichiers `dashboard/src/data/*.js`.
+## Supervision (`/bo/supervision`, rôle viewer)
+
+Mêmes formes que les données simulées du dashboard (`dashboard/src/data/supervision.js`,
+`metrics.js`, `incident.js`) : les composants existants s'alimentent presque tels quels.
+Sources : Prometheus, Loki et le moteur de remédiation (`GET /status`). Si une source manque,
+la valeur vaut `"—"` avec le ton `unknown` : la page reste affichable.
+
+| Route | Contenu | Données simulées remplacées |
+|---|---|---|
+| `GET /bo/supervision/overview` | `status` (badge), `banner`, `kpis` (6 indicateurs : `key`, `label`, `value` mis en forme, `raw`, `sub`, `tone`), `sources` | `phases[x].status`, `.banner`, `.kpis` |
+| `GET /bo/supervision/services` | Cartes `{name, desc, status, metric}` ; `status` : `ok`, `warn`, `down`, `restored` ou **`unknown`** (nouveau) | `phases[x].services` |
+| `GET /bo/supervision/series?minutes=30` | `points[]` `{time: "10:42", ts, incident, latency, anomaly, tx}` + `incident {x1, x2}` | `getSeries()` |
+| `GET /bo/supervision/resources` | `[{label, value, percent}]` : CPU, mémoire, disque, réseau | `resources[x]` |
+| `GET /bo/supervision/logs?level=all\|warn\|error&source&minutes&limit` | `logs[]` `{time, ts, level, source, msg}`, plus récents d'abord ; identifiants, IP et emails retirés | `getLogs()` |
+
+Le bouton avant / pendant / après n'a plus d'objet avec des données réelles : il peut rester
+comme mode démo, branché sur les données simulées.
+
+## Incidents, assistant, Grafana
+
+| Route | Rôle | Contenu |
+|---|---|---|
+| `GET /bo/incidents?limit` · `GET /bo/incidents/{id}` | viewer | Relayés tels quels depuis le moteur de remédiation (format défini par le moteur, CADRAGE §4.6) ; `503 remediation_unavailable` tant qu'il n'est pas déployé |
+| `POST /bo/assistant/ask` `{question}` | operator | `{answer, sources: [{doc, extrait}]}` depuis assistant-rag ; 10 questions par minute ; jusqu'à 60 s de réponse |
+| `GET /bo/grafana` | viewer | `panels[]` `{key, title, embed_url}` à mettre dans une `<iframe>` (latence, erreurs, transactions, pool MariaDB, connexions, score d'anomalie, journaux d'erreur), `dashboards[]`, `tools[]` (liens de la barre latérale) |
+
+Grafana : tableau versionné `infra/grafana-provisioning/dashboards/orbe-supervision.json`
+(uid `orbe-supervision`), intégration autorisée et lecture anonyme (rôle Viewer, port
+publié sur 127.0.0.1 seulement).
+
+Rafraîchissement conseillé : toutes les 2 à 5 s pour `overview`, `services` et `logs`,
+toutes les 30 s pour `series`, `resources` et `/bo/data/*`.
 
 ## Configuration (préfixe `BO_`)
 | Variable | Défaut |
@@ -86,7 +119,11 @@ assistant) : à venir, au format des fichiers `dashboard/src/data/*.js`.
 | `BO_DB_POOL_SIZE` / `BO_PAGE_SIZE_MAX` | `3` / `100` |
 | `BO_PROMETHEUS_URL` / `BO_LOKI_URL` | `http://prometheus:9090` / `http://loki:3100` |
 | `BO_REMEDIATION_URL` / `BO_DETECTOR_URL` / `BO_ASSISTANT_URL` | ports 8003 / 8004 / 8005 |
-| `BO_GRAFANA_PUBLIC_URL` | `http://localhost:3000` (adresse vue par le navigateur) |
+| `BO_GRAFANA_PUBLIC_URL` / `BO_PROMETHEUS_PUBLIC_URL` | `http://localhost:3000` / `http://localhost:9090` (adresses vues par le navigateur) |
+| `BO_LOKI_SELECTOR` | `{container=~"oorbe-.+"}` (dev : `{container=~"orbe-dev-.+"}`) |
+| `BO_DISK_MOUNTPOINT` | `/` (Docker Desktop : `/var/lib`) |
+| `BO_LATENCY_THRESHOLD_MS` / `BO_ERROR_RATE_THRESHOLD` / `BO_ANOMALY_THRESHOLD` | `800` / `0.02` / `0.80` |
+| `BO_DISPLAY_TIMEZONE` | `Europe/Paris` (heures des courbes et des journaux) |
 | `BO_CORS_ORIGINS` | `[]` |
 | `BO_ENABLE_DOCS` | `false` (Swagger sur `/docs` si `true`) |
 
@@ -97,5 +134,6 @@ py -3.13 -m venv .venv
 .venv/Scripts/python -m pytest
 .venv/Scripts/python -m ruff check .
 ```
-Les tests simulent auth-service (`httpx.MockTransport`) et utilisent SQLite en mémoire ; le
+Les tests simulent auth-service, Prometheus, Loki, le moteur de remédiation et l'assistant
+(`httpx.MockTransport`) et utilisent SQLite en mémoire ; le
 masquage par la vue `bo_clients` se vérifie sur la pile de dev (MariaDB).
