@@ -11,7 +11,7 @@ import { registerUser, loginWithPassword } from '../services/api';
  * No emojis used.
  */
 export default function RegisterScreen() {
-  const { setCurrentScreen, setAuthToken, setSessionId, setPending2FA, syncBackendData } = useApp();
+  const { setCurrentScreen, setAuthToken, setSessionId, setPending2FA, syncBackendData, setUser } = useApp();
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -51,18 +51,35 @@ export default function RegisterScreen() {
 
     setIsLoading(true);
     try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const trimmedPhone = phone.trim();
+      const trimmedName = displayName.trim();
+
       await registerUser({
-        email: email.trim().toLowerCase(),
-        phone: phone.trim(),
-        display_name: displayName.trim(),
+        email: normalizedEmail,
+        phone: trimmedPhone,
+        display_name: trimmedName,
         password,
       });
+
+      // Update local user state immediately
+      if (setUser) {
+        setUser({
+          name: trimmedName,
+          email: normalizedEmail,
+          phone: trimmedPhone,
+          accountMasked: 'FR76 •••• •••• 0142',
+          bankLabel: 'Banque Démo',
+          initials: trimmedName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || 'OR',
+          faceEnrolled: false,
+        });
+      }
 
       setSuccessMessage('Compte créé avec succès ! Connexion automatique...');
 
       // Auto login with the newly created account to get session / token for biometric enrollment
       try {
-        const loginRes = await loginWithPassword(email.trim().toLowerCase(), password);
+        const loginRes = await loginWithPassword(normalizedEmail, password);
         const token = loginRes.token?.access_token || 'demo-token';
         setAuthToken(token);
         setSessionId(loginRes.session_id);
@@ -75,10 +92,11 @@ export default function RegisterScreen() {
         // Delay for visual confirmation before transitioning to face enrollment
         setTimeout(() => {
           setCurrentScreen('FACE_ENROLL');
-        }, 900);
+        }, 600);
       } catch (loginErr) {
         console.warn('Auto-login error after registration:', loginErr);
-        // If login failed for some reason, prompt user to log in
+        // Clear success message when error occurs to prevent dual banners
+        setSuccessMessage('');
         setErrorMessage('Compte créé, mais échec de la connexion automatique. Veuillez vous connecter.');
         setIsLoading(false);
       }
@@ -129,24 +147,26 @@ export default function RegisterScreen() {
           </p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="px-6 mt-2 space-y-3">
+        {/* Status / Error Banner */}
+        <div className="px-6 pt-2">
           {errorMessage && (
-            <div className="bg-[#ffdad6] text-[#93000a] text-xs p-3 rounded-xl flex items-start gap-2 shadow-xs">
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className="p-3 rounded-xl bg-[#ffdad6] text-[#93000a] text-xs flex items-start gap-2 shadow-xs mb-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#ba1a1a]" />
               <span>{errorMessage}</span>
             </div>
           )}
-
           {successMessage && (
-            <div className="bg-[#d4edd9] text-[#13532a] text-xs p-3 rounded-xl flex items-start gap-2 shadow-xs">
-              <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className="p-3 rounded-xl bg-[#def2e5] text-[#1e7a45] text-xs flex items-start gap-2 shadow-xs mb-2">
+              <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#1e7a45]" />
               <span>{successMessage}</span>
             </div>
           )}
+        </div>
 
+        {/* Registration Form */}
+        <form id="register-form" onSubmit={handleSubmit} className="px-6 space-y-3.5 pt-1">
           <div>
-            <label className="block text-[11px] font-semibold text-[#293538] uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-semibold text-[#55636a] uppercase tracking-wider mb-1">
               Nom complet
             </label>
             <input
@@ -154,13 +174,13 @@ export default function RegisterScreen() {
               required
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="ex: Alex Dupont"
-              className="w-full h-10 px-3 rounded-xl border border-[#b8c9cd] bg-white text-xs text-[#0f1a1d] placeholder:text-[#839396] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b]"
+              placeholder="ex. Alex Dupont"
+              className="w-full h-11 px-3.5 rounded-xl bg-white border border-[#d5dcdf] text-sm text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b] shadow-2xs"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold text-[#293538] uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-semibold text-[#55636a] uppercase tracking-wider mb-1">
               Adresse email
             </label>
             <input
@@ -168,13 +188,13 @@ export default function RegisterScreen() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="ex: alex@orbe.test"
-              className="w-full h-10 px-3 rounded-xl border border-[#b8c9cd] bg-white text-xs text-[#0f1a1d] placeholder:text-[#839396] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b]"
+              placeholder="alex.dupont@orbe.test"
+              className="w-full h-11 px-3.5 rounded-xl bg-white border border-[#d5dcdf] text-sm text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b] shadow-2xs"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold text-[#293538] uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-semibold text-[#55636a] uppercase tracking-wider mb-1">
               Numéro de téléphone
             </label>
             <input
@@ -183,12 +203,12 @@ export default function RegisterScreen() {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="+33 6 12 34 56 78"
-              className="w-full h-10 px-3 rounded-xl border border-[#b8c9cd] bg-white text-xs text-[#0f1a1d] placeholder:text-[#839396] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b]"
+              className="w-full h-11 px-3.5 rounded-xl bg-white border border-[#d5dcdf] text-sm text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b] shadow-2xs"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold text-[#293538] uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-semibold text-[#55636a] uppercase tracking-wider mb-1">
               Mot de passe (8 caractères minimum)
             </label>
             <input
@@ -196,13 +216,13 @@ export default function RegisterScreen() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full h-10 px-3 rounded-xl border border-[#b8c9cd] bg-white text-xs text-[#0f1a1d] placeholder:text-[#839396] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b]"
+              placeholder="••••••••••••"
+              className="w-full h-11 px-3.5 rounded-xl bg-white border border-[#d5dcdf] text-sm text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b] shadow-2xs"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold text-[#293538] uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-semibold text-[#55636a] uppercase tracking-wider mb-1">
               Confirmer le mot de passe
             </label>
             <input
@@ -210,35 +230,35 @@ export default function RegisterScreen() {
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full h-10 px-3 rounded-xl border border-[#b8c9cd] bg-white text-xs text-[#0f1a1d] placeholder:text-[#839396] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b]"
+              placeholder="••••••••••••"
+              className="w-full h-11 px-3.5 rounded-xl bg-white border border-[#d5dcdf] text-sm text-[#0f1a1d] focus:outline-none focus:border-[#0e5a6b] focus:ring-1 focus:ring-[#0e5a6b] shadow-2xs"
             />
           </div>
-
-          <div className="pt-1 text-[11px] text-[#55636a] leading-relaxed">
-            En créant votre compte, vous serez invité à capturer votre empreinte faciale pour sécuriser vos connexions et paiements.
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full h-11 mt-2 rounded-xl bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>{isLoading ? 'Création en cours...' : 'Créer mon compte'}</span>
-          </button>
         </form>
       </div>
 
-      {/* Footer Switch to Login */}
-      <div className="px-6 text-center mt-4">
+      {/* Action Buttons */}
+      <div className="px-6 pt-4 space-y-2.5">
         <button
-          type="button"
-          onClick={() => setCurrentScreen('LOGIN')}
-          className="text-xs text-[#0e5a6b] font-medium hover:underline cursor-pointer"
+          form="register-form"
+          type="submit"
+          disabled={isLoading}
+          className="w-full h-11 rounded-xl bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
         >
-          Déjà un compte ? Se connecter
+          <UserPlus className="w-4 h-4" />
+          <span>{isLoading ? 'Création en cours...' : 'Créer mon compte'}</span>
         </button>
+
+        <p className="text-center text-xs text-[#55636a]">
+          Déjà un compte ?{' '}
+          <button
+            type="button"
+            onClick={() => setCurrentScreen('LOGIN')}
+            className="text-[#0e5a6b] font-semibold hover:underline cursor-pointer"
+          >
+            Se connecter
+          </button>
+        </p>
       </div>
     </div>
   );

@@ -9,8 +9,8 @@ const AUTH_URL = import.meta.env.VITE_AUTH_URL || '/api/auth';
 const PAYMENT_URL = import.meta.env.VITE_PAYMENT_URL || '/api/payments';
 const STATUS_URL = import.meta.env.VITE_STATUS_URL || '/api/status';
 
-// Default timeout in milliseconds for network requests
-const REQUEST_TIMEOUT_MS = 2500;
+// Default timeout in milliseconds for network requests (15s to allow Argon2 hashing and ONNX face inference)
+const REQUEST_TIMEOUT_MS = 15000;
 
 /**
  * Fetch wrapper with timeout and error interception for resilience.
@@ -71,13 +71,6 @@ export async function checkBackendHealth() {
 }
 
 /**
- * Perform password login step against /login.
- *
- * @param {string} email
- * @param {string} password
- * @returns {Promise<{ mfa_required: boolean, session_id: string, face_challenge?: { direction: string, frames: number, interval_ms: number }, token?: { access_token: string, expires_in: number, factors: string[] }, face_enrollment_required?: boolean }>}
- */
-/**
  * Register a new user account against /register.
  *
  * @param {{ email: string, phone: string, display_name: string, password: string }} userData
@@ -106,6 +99,13 @@ export async function registerUser({ email, phone, display_name, password }) {
   return await res.json();
 }
 
+/**
+ * Perform password login step against /login.
+ *
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<{ mfa_required: boolean, session_id: string, face_challenge?: { direction: string, frames: number, interval_ms: number }, token?: { access_token: string, expires_in: number, factors: string[] }, face_enrollment_required?: boolean }>}
+ */
 export async function loginWithPassword(email, password) {
   const res = await fetchWithTimeout(`${AUTH_URL}/login`, {
     method: 'POST',
@@ -212,8 +212,7 @@ export async function getFaceEnrollmentStatus(token) {
  * Helper to fetch /me user profile details.
  *
  * @param {string} token
- * @returns {Promise<{ client_id: string, email: string, phone_masked: string, display_name: string, factors: string[] } | null>}
- */
+ * @returns {Promise<{ client_id: string, email: string, phone_masked: string, display_name: string, factors: string[] } | null>}\n */
 export async function getMeProfile(token) {
   try {
     const res = await fetchWithTimeout(`${AUTH_URL}/me`, {

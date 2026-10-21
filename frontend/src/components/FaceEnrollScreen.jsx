@@ -10,7 +10,7 @@ import { enrollFace } from '../services/api';
  * No emojis used.
  */
 export default function FaceEnrollScreen() {
-  const { authToken, setCurrentScreen, syncBackendData } = useApp();
+  const { authToken, setCurrentScreen, syncBackendData, setUser } = useApp();
 
   const [consentChecked, setConsentChecked] = useState(false);
   const [enrollState, setEnrollState] = useState('IDLE'); // 'IDLE', 'CAPTURING', 'ENROLLED', 'ERROR'
@@ -173,6 +173,9 @@ export default function FaceEnrollScreen() {
       }
 
       setEnrollState('ENROLLED');
+      if (setUser) {
+        setUser((prev) => ({ ...prev, faceEnrolled: true }));
+      }
       await sleep(1000);
 
       if (authToken) {
@@ -185,7 +188,7 @@ export default function FaceEnrollScreen() {
     } finally {
       isEnrollingRef.current = false;
     }
-  }, [cameraStatus, consentChecked, captureCurrentFrameB64, authToken, syncBackendData, setCurrentScreen]);
+  }, [cameraStatus, consentChecked, captureCurrentFrameB64, authToken, setUser, syncBackendData, setCurrentScreen]);
 
   const handleSkip = () => {
     setCurrentScreen('HOME');

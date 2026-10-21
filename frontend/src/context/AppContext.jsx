@@ -148,24 +148,41 @@ const INITIAL_TRANSACTIONS = [
     initials: 'HB',
     counterparty: 'Hugo Bernard',
     subtitle: 'Place de concert · 20:11',
-    amountFormatted: '42,00 €',
-    amountNum: 42.0,
+    amountFormatted: '− 45,00 €',
+    amountNum: -45.0,
+    type: 'sent',
+    status: 'Envoyé',
+    statusSymbol: '●',
+    isFailed: false,
+    date: new Date(Date.now() - 2 * 86400000),
+  },
+  {
+    id: 'tx_8',
+    section: '15 octobre',
+    initials: 'CT',
+    counterparty: 'Camille Test',
+    subtitle: 'Remboursement courses · 12:00',
+    amountFormatted: '+ 30,00 €',
+    amountNum: 30.0,
     type: 'refund',
     status: 'Remboursé',
     statusSymbol: '◇',
     isFailed: false,
-    date: new Date(2026, 9, 15),
+    date: new Date(Date.now() - 2 * 86400000),
   },
 ];
 
 export function AppProvider({ children }) {
-  // Navigation & Views: 'LOGIN', 'REGISTER', 'FACE_AUTH', 'FACE_ENROLL', 'HOME', 'SEND_CONTACT', 'VERIFY', 'RECEIVE', 'ACTIVITY'
-  const [currentScreen, setCurrentScreen] = useState('LOGIN');
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'activity' | 'receive'
-  const [receiveSubTab, setReceiveSubTab] = useState('qr'); // 'qr' | 'request'
+  // Navigation & Screen Management
+  const [currentScreen, setCurrentScreen] = useState('HOME');
+  const [activeTab, setActiveTab] = useState('home'); // 'home', 'send', 'receive', 'activity'
+  const [receiveSubTab, setReceiveSubTab] = useState('qr'); // 'qr' or 'request'
+  const [activityFilter, setActivityFilter] = useState('all'); // 'all', 'sent', 'received'
 
-  // 2FA Biometric Context: null | { type: 'login', email?: string, password?: string } | { type: 'payment' }
-  const [pending2FA, setPending2FA] = useState(null);
+  // Resilience & Health States
+  const [isIncident, setIsIncident] = useState(false);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [manualOverride, setManualOverride] = useState(null); // null (auto) | 'incident' | 'operational'
 
   // Biometric challenge state from auth-service
   const [faceChallenge, setFaceChallenge] = useState(null); // { direction: 'left' | 'right', frames: number, interval_ms: number }
@@ -193,56 +210,50 @@ export function AppProvider({ children }) {
 
   // Transactions State
   const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
-  const [activityFilter, setActivityFilter] = useState('all'); // 'all' | 'sent' | 'received' | 'requests'
 
-  // Resilience & Incident State
-  // manualOverride: true (forced incident), false (forced operational), or null (auto-detect)
-  const [manualOverride, setManualOverride] = useState(null);
-  const [autoHealthStatus, setAutoHealthStatus] = useState('operational'); // 'operational' | 'incident'
-  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  // Pending 2FA flow tracking
+  const [pending2FA, setPending2FA] = useState(null); // null | { type: 'payment' } | { type: 'login', email, password, sessionId }
 
-  // Manual health poll
+  // Periodic health check probe
   const pollHealth = useCallback(async () => {
+    if (manualOverride !== null) {
+      return;
+    }
     setIsCheckingHealth(true);
-    const result = await checkBackendHealth();
-    setAutoHealthStatus(result.operational ? 'operational' : 'incident');
-    setIsCheckingHealth(false);
-  }, []);
+    try {
+      const health = await checkBackendHealth();
+      setIsIncident(!health.operational);
+    } catch {
+      setIsIncident(true);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  }, [manualOverride]);
 
-  // Regular health check interval
   useEffect(() => {
     let isMounted = true;
-    async function runCheck() {
-      const result = await checkBackendHealth();
-      if (isMounted) {
-        setAutoHealthStatus(result.operational ? 'operational' : 'incident');
+    const check = async () => {
+      if (manualOverride !== null) return;
+      try {
+        const health = await checkBackendHealth();
+        if (isMounted && manualOverride === null) {
+          setIsIncident(!health.operational);
+        }
+      } catch {
+        if (isMounted && manualOverride === null) {
+          setIsIncident(true);
+        }
       }
-    }
-
-    runCheck();
-    const interval = setInterval(runCheck, 10000);
+    };
+    check();
+    const interval = setInterval(check, 30000);
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [manualOverride]);
 
-  // Compute effective incident status
-  const isIncident = manualOverride !== null ? manualOverride : autoHealthStatus === 'incident';
-
-  const triggerIncident = useCallback(() => {
-    setManualOverride(true);
-  }, []);
-
-  const restoreOperational = useCallback(() => {
-    setManualOverride(false);
-  }, []);
-
-  const resetToAutoDetection = useCallback(() => {
-    setManualOverride(null);
-  }, []);
-
-  // Fetch account, profile, contacts, transactions, QR code from backend
+  // Synchronize dynamic data from backend
   const syncBackendData = useCallback(async (token) => {
     try {
       const [accountResult, contactsResult, txResult, qrResult, meResult] = await Promise.all([
@@ -283,45 +294,70 @@ export function AppProvider({ children }) {
       }
 
       if (Array.isArray(txResult) && txResult.length > 0) {
-        setTransactions((prev) => {
-          const remoteIds = new Set(txResult.map((t) => t.id));
-          const remainingPrev = prev.filter((t) => !remoteIds.has(t.id));
-          return [...txResult, ...remainingPrev];
-        });
+        setTransactions(txResult);
       }
 
       if (qrResult) {
         setQrData(qrResult);
       }
     } catch (err) {
-      console.warn('Backend data synchronization fallback:', err);
+      console.warn('Backend sync warning (using defaults):', err);
     }
   }, []);
 
-  // Execute payment
-  const executePayment = useCallback(async () => {
-    if (isIncident) {
-      throw new Error('Service currently unavailable due to incident');
+  // Sync on startup with initial token
+  useEffect(() => {
+    let isMounted = true;
+    if (authToken) {
+      Promise.resolve().then(() => {
+        if (isMounted) {
+          syncBackendData(authToken);
+        }
+      });
     }
+    return () => {
+      isMounted = false;
+    };
+  }, [authToken, syncBackendData]);
 
+  // Manual incident simulation
+  const triggerIncident = useCallback(() => {
+    setManualOverride('incident');
+    setIsIncident(true);
+  }, []);
+
+  // Manual operational restoration
+  const restoreOperational = useCallback(() => {
+    setManualOverride('operational');
+    setIsIncident(false);
+  }, []);
+
+  // Reset to auto health monitoring
+  const resetToAutoDetection = useCallback(() => {
+    setManualOverride(null);
+    pollHealth();
+  }, [pollHealth]);
+
+  // Execute payment transaction
+  const executePayment = useCallback(async () => {
     const cleanAmount = parseFloat(sendAmount.replace(',', '.')) || 12.5;
     const amountCents = Math.round(cleanAmount * 100);
 
-    try {
-      await sendPaymentApi(
-        {
-          recipientId: selectedContact.id.length === 36 ? selectedContact.id : undefined,
-          recipient: selectedContact.rawPhone || selectedContact.email,
-          amount_cents: amountCents,
-          description: sendReason,
-        },
-        authToken
-      );
-    } catch (err) {
-      console.warn('Payment executed via resilience fallback:', err.message);
+    if (!isIncident && authToken) {
+      try {
+        await sendPaymentApi(
+          {
+            recipientId: selectedContact.id,
+            amount_cents: amountCents,
+            description: sendReason,
+          },
+          authToken
+        );
+      } catch (err) {
+        console.warn('Backend payment rejected, recording local state:', err);
+      }
     }
 
-    // Format current time HH:MM
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const amountFormatted = `− ${sendAmount.includes(',') ? sendAmount : sendAmount + ',00'} €`;
@@ -354,7 +390,7 @@ export function AppProvider({ children }) {
       // Step 1 done: face challenge received
       setSessionId(result.session_id);
       setFaceChallenge(result.face_challenge || { direction: 'left', frames: 8, interval_ms: 250 });
-      setPending2FA({ type: 'login', email, sessionId: result.session_id });
+      setPending2FA({ type: 'login', email, password, sessionId: result.session_id });
       setCurrentScreen('FACE_AUTH');
     } else if (result.face_enrollment_required) {
       // Logged in with password only, no face enrolled yet -> go to enrollment screen
@@ -373,6 +409,20 @@ export function AppProvider({ children }) {
       setCurrentScreen('HOME');
     }
   }, [syncBackendData]);
+
+  // Retry 2FA login by renewing the session and obtaining a fresh challenge
+  const retry2FALogin = useCallback(async () => {
+    if (pending2FA?.email && pending2FA?.password) {
+      const result = await loginWithPassword(pending2FA.email, pending2FA.password);
+      if (result.mfa_required) {
+        setSessionId(result.session_id);
+        setFaceChallenge(result.face_challenge || { direction: 'left', frames: 8, interval_ms: 250 });
+        setPending2FA((prev) => ({ ...prev, sessionId: result.session_id }));
+        return result;
+      }
+    }
+    return null;
+  }, [pending2FA]);
 
   // Start 2FA payment flow
   const start2FAPayment = useCallback(() => {
@@ -505,6 +555,7 @@ export function AppProvider({ children }) {
         pollHealth,
         handleLogout,
         start2FALogin,
+        retry2FALogin,
         start2FAPayment,
         completeFaceAuth,
         on2FASuccess,

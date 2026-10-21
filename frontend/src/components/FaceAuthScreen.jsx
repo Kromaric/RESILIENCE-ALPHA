@@ -19,6 +19,7 @@ export default function FaceAuthScreen() {
     pending2FA,
     faceChallenge,
     sessionId,
+    retry2FALogin,
     setCurrentScreen,
   } = useApp();
 
@@ -148,6 +149,25 @@ export default function FaceAuthScreen() {
       }
     };
   }, [cameraRetry]);
+
+  // Handle retry after biometric failure by refreshing session challenge
+  const handleRetryVerification = useCallback(async () => {
+    setErrorMessage('');
+    if (isLoginFlow && retry2FALogin) {
+      try {
+        const fresh = await retry2FALogin();
+        if (fresh) {
+          setScanState('IDLE');
+          return;
+        }
+      } catch (err) {
+        setScanState('ERROR');
+        setErrorMessage(err.message || 'Impossible de renouveler la session de connexion.');
+        return;
+      }
+    }
+    setScanState('IDLE');
+  }, [isLoginFlow, retry2FALogin]);
 
   // Perform multi-frame capture and biometric verification
   const runVerification = useCallback(async () => {
@@ -485,7 +505,7 @@ export default function FaceAuthScreen() {
                 </span>
                 <button
                   type="button"
-                  onClick={runVerification}
+                  onClick={handleRetryVerification}
                   className="text-xs text-[#0e5a6b] font-medium hover:underline mt-1 cursor-pointer inline-flex items-center gap-1"
                 >
                   <RefreshCw className="w-3 h-3" />
