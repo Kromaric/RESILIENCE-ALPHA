@@ -20,11 +20,11 @@ COPY docs/ /app/docs/
 RUN npm run build
 
 
-# Étape 2 : Nginx non root (uid 101), port 8080
+# Étape 2 : Nginx non root (uid 101), port 8083
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runner
 
 RUN echo 'server { \
-    listen 8080; \
+    listen 8083; \
     server_name localhost; \
     server_tokens off; \
     location / { \
@@ -36,6 +36,6 @@ RUN echo 'server { \
 
 COPY --from=builder /app/dashboard/dist /usr/share/nginx/html
 
-EXPOSE 8080
+EXPOSE 8083
 
 CMD ["nginx", "-g", "daemon off;"]
