@@ -64,6 +64,11 @@ def build_spec(service: str) -> dict:
         os.environ[f"{prefix}_DATABASE_URL"] = f"sqlite+aiosqlite:///{tmp_dir / 'openapi.db'}"
         os.environ[f"{prefix}_{config['key_setting']}"] = str(write_temporary_key(tmp_dir, service))
         os.environ[f"{prefix}_ENABLE_DOCS"] = "true"
+        if service == "auth-service":
+            # moteur de visage simulé : pas besoin du modèle pour décrire l'API
+            (tmp_dir / "face.key").write_text("00" * 32)
+            os.environ["AUTH_FACE_ENGINE"] = "fake"
+            os.environ["AUTH_FACE_KEY_FILE"] = str(tmp_dir / "face.key")
         sys.path.insert(0, str(ROOT / "services" / service))
         from app.main import create_app
 

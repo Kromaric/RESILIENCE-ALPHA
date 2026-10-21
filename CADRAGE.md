@@ -1,7 +1,7 @@
 # PROJECT RESILIENCE-ALPHA — Cadrage technique
 
 > Workshop EPSI BAC+5 — Octobre 2026 — Consortium G\<n\>
-> Statut : **v0.4** — modèle Orbe v2 codé : authentification forte (passkeys), sessions révocables, comptabilité en partie double
+> Statut : **v0.4** — modèle Orbe v2 codé : authentification forte (mot de passe + visage), sessions révocables, comptabilité en partie double
 > Périmètre : architecture, composants, interfaces, données, observabilité, détection, remédiation, sécurité technique, déploiement.
 > La gouvernance (EBIOS RM, PCA/PRA, NIS2/DORA) fait l'objet d'un document séparé.
 
@@ -127,7 +127,7 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 - Le bind sur `192.168.137.1` échoue si le hotspot n'est pas actif → démarrer le hotspot **avant** `compose up` (vérifié par `deploy.yml`).
 - Pare-feu Windows : entrant autorisé uniquement sur 443 pour le profil du hotspot.
 - TLS : certificat généré au déploiement par une **CA locale (`mkcert`)**, installée sur les appareils de démo (PC, téléphone), le PC Attaquant et la sonde.
-- **Nom de domaine `orbe.test`** → `192.168.137.1`, déclaré dans le fichier `hosts` des appareils de démo. Obligatoire pour WebAuthn, qui refuse une adresse IP comme identifiant de site (§4.2). Le certificat du WAF couvre `orbe.test`.
+- **Nom de domaine `orbe.test`** → `192.168.137.1`, déclaré dans le fichier `hosts` des appareils de démo. Le navigateur n'autorise la caméra (`getUserMedia`) que sur une origine HTTPS : le certificat du WAF couvre `orbe.test`.
 
 ---
 
@@ -150,39 +150,44 @@ Budget PC Hôte 16 Go : Windows ≈ 4 Go + VM WSL2 ≈ 2 Go + conteneurs ≈ 5,2
 
 ### 4.2 auth-service (8001)
 
-> **v2** : double authentification **mot de passe + passkey biométrique (WebAuthn)**, sessions révocables et applications clientes. Modèle de données : `docs/mcd.md`.
+> **v2** : double authentification **mot de passe + reconnaissance faciale** (modèle pré-entraîné InsightFace, exécuté par auth-service), sessions révocables et applications clientes. Exigence du coach ; remplace la passkey WebAuthn de la v0.4. auth-service servira aussi d'authentification au back-office. Modèle de données : `docs/mcd.md`.
 
-**Authentification forte (DSP2 : deux facteurs parmi trois)** — le mot de passe est ce que l'on sait ; la passkey, déverrouillée par Face ID / Windows Hello, est ce que l'on possède et ce que l'on est. La biométrie est vérifiée **sur l'appareil** : le serveur ne reçoit ni image ni gabarit, seulement une signature, et ne stocke que la clé publique de la passkey (aucune donnée sensible au sens de l'art. 9 RGPD).
+**Authentification forte (DSP2 : deux facteurs parmi trois)** — le mot de passe est ce que l'on sait, le visage ce que l'on est. Le front capture quelques images à la caméra (`getUserMedia`) ; auth-service calcule les gabarits (embeddings ArcFace, 512 dimensions) et les compare à ceux enregistrés. **Aucune image n'est conservée**, seuls 3 à 5 gabarits chiffrés par client.
 
 ```
 1. POST /login                         email + mot de passe
-   ← 200 { "mfa_required": true, "session_id", "webauthn_options" }    session « en_attente_2fa »
-2. navigator.credentials.get()         l'appareil vérifie le visage et signe le défi
-3. POST /login/passkey                 { "session_id", "assertion" }
-   ← 200 { "access_token", "expires_in": 900 }                          session « active »
+   ← 200 { "mfa_required": true, "session_id",
+           "face_challenge": { "direction": "left", "frames": 8, "interval_ms": 250 } }
+                                       session « en_attente_2fa » (2 min)
+2. caméra                              8 images pendant que le client tourne la tête du côté demandé
+3. POST /login/face                    { "session_id", "frames": [base64 JPEG…] }
+   ← 200 { "access_token", "expires_in": 900, "factors": ["pwd", "face"] }   session « active »
 ```
 
 | Endpoint | Entrée | Sortie |
 |---|---|---|
 | `POST /register` | `{ "email", "phone", "display_name", "password" }` | `201 { "client_id", … }` · `409` (`email_taken`, `phone_taken`) · `422` (`weak_password`…) · `429` |
-| `POST /login` | `{ "email", "password" }` + en-tête `X-Client-Id` (application) | `200 { "mfa_required", "session_id", "webauthn_options" }` · `401` · `423` · `429` |
-| `POST /login/passkey` | `{ "session_id", "assertion" }` | `200 { "access_token", "token_type": "bearer", "expires_in": 900 }` · `401` |
-| `POST /passkeys/register/options` · `POST /passkeys/register` | session active | enregistrement d'une passkey (un appareil) |
-| `GET /passkeys` · `DELETE /passkeys/{id}` | session active | gestion des appareils |
+| `POST /login` | `{ "email", "password" }` + en-tête `X-Client-Id` (application) | `200 { "mfa_required", "session_id", "face_challenge", "token", "face_enrollment_required" }` · `401` · `423` · `429` |
+| `POST /login/face` | `{ "session_id", "frames" }` | `200 { "access_token", "token_type": "bearer", "expires_in": 900 }` · `401` (`second_factor_failed`, `liveness_failed`) · `422` |
+| `POST /face/enroll` | session active, `{ "consent": true, "frames" }` (~16 images, tête qui balaie) | `201 { "enrolled", "templates", "model" }` · `403` · `422` (`consent_required`, `enrollment_failed`) |
+| `GET /face` · `DELETE /face` | session active | état de l'enrôlement · droit à l'effacement |
 | `POST /logout` | session active | révocation de la session |
-| `GET /me` | `Authorization: Bearer` | `200 { "client_id", "email", "phone_masked": "+33 6 •• •• •• 78", "display_name" }` |
+| `GET /me` | `Authorization: Bearer` | `200 { "client_id", "email", "phone_masked", "display_name", "factors", "face_enrolled" }` |
 | `GET /verify` | en-tête `X-API-Key` | `200 { "partner", "scopes": [] }` · `401` |
 | `GET /health/live` · `/health/ready` | — | `200` / `503` |
 | `GET /metrics` | — | format Prometheus |
 
-- Bibliothèques : `webauthn` (Duo Labs) côté serveur, `@simplewebauthn/browser` côté React. Identifiant de site (RP ID) : **`orbe.test`** (§3.4) ; vérification utilisateur exigée (`userVerification: "required"`).
-- JWT **RS256**, durée 15 min, claims `sub` (client_id), `email`, `jti` (= identifiant de session), `amr` (`["pwd", "passkey"]`) ; clé privée lue dans Vault, clé publique distribuée aux services de paiement.
+- **Modèle** : InsightFace `buffalo_s` (détection SCRFD + reconnaissance ArcFace MobileFaceNet), CPU via onnxruntime, embarqué dans l'image Docker (aucun téléchargement à l'exécution). Environ 300 Mo de RAM, ~100 ms par image. Licence des modèles : usage non commercial, compatible avec le démonstrateur.
+- **Décision 1:1** : similarité cosinus ≥ **0,40** avec un des gabarits du client sur au moins **3 images**. Seuil à mesurer sur l'équipe (taux de faux rejets / fausses acceptations) avant la soutenance.
+- **Détection du vivant (défi-réponse)** : le serveur tire au hasard un sens (gauche/droite) ; la rotation de la tête mesurée (lacet) entre le début et la fin de la séquence doit dépasser 8° dans ce sens. Une photo imprimée ou un écran figé échoue (`liveness_failed`). Limite assumée : une vidéo rejouée qui tourne du bon côté passe (une chance sur deux) ; pas d'anti-spoofing par profondeur ou texture.
+- **Échecs** : un échec de visage ferme la session en attente (pas de nouvel essai sur le même défi) et compte dans les 5 échecs qui bloquent le compte 10 min.
+- **Enrôlement** : consentement explicite obligatoire (horodaté dans `clients.biometric_consent_at`). Un compte sans visage reçoit une session « mot de passe seul » qui ne permet que de consulter et d'enregistrer son visage ; payment-service refuse tout mouvement d'argent (`403 second_factor_required`). Un compte qui a déjà un visage ne le remplace ou ne le supprime que depuis une session confirmée par ce visage.
+- **RGPD (art. 9, donnée biométrique)** : images traitées en mémoire puis oubliées, jamais journalisées ; gabarits chiffrés **AES-256-GCM**, liés à leur propriétaire (le client_id sert de donnée authentifiée : un gabarit copié sur un autre compte ne se déchiffre pas) ; clé dans un secret Docker (`face_embedding_key`), Vault Transit possible (`AUTH_FACE_CIPHER=vault`). Effacement à la demande (`DELETE /face`). Démo : comptes fictifs, visages des membres de l'équipe volontaires.
+- JWT **RS256**, durée 15 min, claims `sub` (client_id), `email`, `jti` (= identifiant de session), `amr` (`["pwd", "face"]`) ; clé privée lue dans Vault, clé publique distribuée aux services de paiement.
 - **Inscription** : email et téléphone normalisés et uniques, mot de passe de 12 caractères minimum refusé s'il est courant ou contient l'email, 5 inscriptions par minute et par IP. `auth_svc` n'a le droit d'insérer que `id, email, phone, display_name, password_hash` : une inscription ne peut pas créer de compte de sonde. Répondre « email déjà utilisé » révèle l'existence d'un compte (compromis assumé, freiné par la limitation de débit). Hors périmètre : vérification de l'email et du téléphone, KYC.
 - Mots de passe : `argon2id`. **5 échecs → compte bloqué 10 min** (`failed_logins`, `locked_until`) + limitation par IP. Les tentatives sont tracées dans les journaux (Loki / SOC), pas en base.
-- Compteur de signatures de la passkey vérifié à chaque connexion : un compteur qui recule signale une passkey clonée → refus et alerte SOC.
-- **Compatibilité web** : WebAuthn est un standard du navigateur, utilisable depuis le front web responsive sans application native (Safari iOS 16+ → Face ID, Chrome Android → déverrouillage de l'appareil, Windows Hello sur PC). Le front détecte la prise en charge avec `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()`. Dans le dossier, parler de « biométrie de l'appareil » : WebAuthn garantit la vérification de l'utilisateur, pas le type de biométrie.
-- **Alternative étudiée, reportée** : reconnaissance faciale côté serveur avec un modèle pré-entraîné (InsightFace / ArcFace). Écartée pour la première version : empreintes faciales de vraies personnes (donnée sensible, RGPD art. 9, contraire au cadre fictif du sujet), fraude par simple photo sans détection du vivant, 300 à 500 Mo de RAM en plus. Si elle est reprise : facteur **en plus** de WebAuthn, consentement explicite, photo supprimée après calcul, empreinte chiffrée (clé dans Vault), détection du vivant, seuil mesuré.
-- **Exception de la sonde** : la sonde (CLIENT_API de type `service`, clé d'API dédiée) ouvre ses sessions sans passkey et n'agit que sur les comptes `is_probe`. Risque résiduel documenté.
+- **Ressources** : l'inférence est coûteuse (CPU) ; taille et nombre d'images bornés (12 images de 400 Ko maximum à la connexion), limitation par IP. Scénario « ressource exhaustion » à surveiller : métrique `auth_face_inference_seconds`.
+- **Exception de la sonde** : la sonde (CLIENT_API de type `service`, clé d'API dédiée) ouvre ses sessions sans visage et n'agit que sur les comptes `is_probe`. Risque résiduel documenté.
 - La maquette annonce une expiration « après 15 min d'inactivité » : avec un JWT fixe, c'est 15 min après la connexion. Libellé à corriger, ou jeton de rafraîchissement à ajouter si le temps le permet.
 
 ### 4.3 payment-service (8002) — 2 instances
@@ -280,7 +285,7 @@ Carte de test du payeur ──► payment-service ──► solde du bénéficia
 ### 4.4 probe — sonde de transaction synthétique (8006)
 
 - Toutes les 10 s : `login` → `pay` (carte `4242…`, 1 €) → `GET /transactions/{reference}` **à travers le WAF** (vrai chemin utilisateur).
-- v2 : la sonde ne peut pas utiliser de passkey ; elle se connecte avec la clé d'API de son CLIENT_API de type `service` (exception documentée, §4.2).
+- v2 : la sonde ne peut pas présenter de visage ; elle se connecte avec la clé d'API de son CLIENT_API de type `service` (exception documentée, §4.2).
 - Deux comptes de test dédiés (payeur et bénéficiaire de la sonde), marqués `is_probe`, **exclus** des historiques et soldes affichés aux clients ; IP en liste blanche du blocage dynamique.
 - Expose `probe_transaction_success` (0/1), `probe_transaction_duration_seconds`, `probe_step_failures_total{step}`.
 - Fournit aussi `POST /run` (appelé par le moteur pour la vérification, §7.5).
@@ -358,7 +363,7 @@ Maquette de référence : `frontend/maquette/orbe-accueil-mobile.html` (applicat
 
 ## 5. Modèle de données (MariaDB)
 
-Modèle conceptuel, règles de gestion et MLD : [`docs/mcd.md`](docs/mcd.md). Schéma de référence : `infra/mariadb/init/01-schema.sql` (tables `clients`, `client_apis`, `passkeys`, `sessions`, `ledger_accounts`, `ledger_entries`, `payout_accounts`, `contacts`, `transactions`, `payment_requests`).
+Modèle conceptuel, règles de gestion et MLD : [`docs/mcd.md`](docs/mcd.md). Schéma de référence : `infra/mariadb/init/01-schema.sql` (tables `clients`, `client_apis`, `client_face_templates`, `sessions`, `ledger_accounts`, `ledger_entries`, `payout_accounts`, `contacts`, `transactions`, `payment_requests`).
 
 | `type` | payer | recipient | Statuts possibles |
 |---|---|---|---|
@@ -372,7 +377,7 @@ Modèle conceptuel, règles de gestion et MLD : [`docs/mcd.md`](docs/mcd.md). Sc
 
 | Compte | Droits |
 |---|---|
-| `auth_svc` | `clients` (lecture, `UPDATE (failed_logins, locked_until)`), `client_apis` (lecture), `passkeys`, `sessions` |
+| `auth_svc` | `clients` (lecture, `UPDATE (failed_logins, locked_until, biometric_consent_at)`), `client_apis` (lecture), `client_face_templates` (lecture, insertion, suppression), `sessions` |
 | `payment_svc` | `clients` (lecture, `UPDATE (qr_token)`), `sessions` (lecture de `id, client_id, client_api_id, status, factors, expires_at` uniquement), `ledger_accounts` (lecture, création, `UPDATE (balance_cents)`), `ledger_entries` (lecture, insertion), `transactions`, `payment_requests`, `payout_accounts`, `contacts` |
 | `remediation_ro` | lecture de `transactions`, `ledger_entries`, `ledger_accounts` (contrôles de cohérence) |
 | `exporter` | `PROCESS, REPLICATION CLIENT, SLAVE MONITOR` |
@@ -730,7 +735,7 @@ Pas de déploiement depuis la CI : les runners GitHub ne joignent pas le PC Hôt
 - [ ] SC-02 : go / no-go
 - [ ] Jeton de rafraîchissement (session « 15 min d'inactivité ») : oui / non
 - [ ] Mise à jour de la maquette selon §4.9
-- [ ] Appareils de démo compatibles WebAuthn biométrique (téléphone Face ID / Android, ou PC Windows Hello visage) et repli prévu (PIN Windows Hello, clé de sécurité)
+- [ ] Appareils de démo avec caméra (téléphone ou PC), éclairage correct ; visages de l'équipe enregistrés à l'avance
 - [ ] `orbe.test` + CA `mkcert` installée sur ces appareils : à tester dès le premier jour
 - [ ] Résolution de `orbe.test` depuis un téléphone sur le hotspot (DNS du hotspot ou nom de type `sslip.io`) et confiance de la CA `mkcert` sur Android
-- [ ] Reconnaissance faciale par modèle pré-entraîné : à réévaluer après la v2 (§4.2)
+- [ ] Seuil de reconnaissance faciale mesuré sur l'équipe (§4.2)

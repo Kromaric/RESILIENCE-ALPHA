@@ -10,7 +10,7 @@ retirer vers l'un de ses **comptes liés**. Un client peut aussi **demander** de
 ## Authentification
 `Authorization: Bearer <JWT>` émis par auth-service, vérifié localement, et dont la **session doit être
 active** (non révoquée ; statut lu en base avec un cache de 5 s). Toute opération qui déplace de
-l'argent exige une session **confirmée par passkey** (`403 second_factor_required` sinon) ; la sonde
+l'argent exige une session **confirmée par reconnaissance faciale** (`403 second_factor_required` sinon) ; la sonde
 (application de type `service`) en est dispensée mais n'agit que sur les comptes de la sonde.
 
 Les opérations qui déplacent de l'argent exigent `Idempotency-Key: <uuid>` : `201` à la création,

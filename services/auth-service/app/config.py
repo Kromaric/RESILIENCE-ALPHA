@@ -32,12 +32,31 @@ class Settings(BaseSettings):
     jwt_audience: str = "orbe"
     jwt_ttl_seconds: int = 900
 
-    # Second facteur WebAuthn (passkey). L'identifiant de site doit être un nom de domaine,
-    # pas une adresse IP (CADRAGE §3.4).
-    webauthn_rp_id: str = "orbe.test"
-    webauthn_rp_name: str = "Orbe"
-    webauthn_origins: list[str] = ["https://orbe.test"]
-    pending_2fa_seconds: int = 300  # délai pour valider la passkey après le mot de passe
+    # Second facteur : reconnaissance faciale (notre modèle), CADRAGE §4.2
+    face_engine: str = "insightface"  # insightface | fake (tests et développement sans caméra)
+    face_model: str = "buffalo_s"  # buffalo_l est plus précis mais ~2× plus lourd en RAM
+    face_model_root: Path = Path("/opt/insightface")
+    face_det_size: int = 320
+    face_threshold: float = 0.40  # similarité cosinus, à calibrer sur l'équipe
+    face_min_matching_frames: int = 3
+    liveness_min_turn_degrees: float = 8.0  # rotation de la tête dans le sens demandé
+    liveness_left_is_positive_yaw: bool = (
+        True  # sens du lacet du modèle, à vérifier à la calibration
+    )
+    login_frames: int = 8  # images attendues à la connexion (indication pour le front)
+    login_max_frames: int = 12
+    enroll_frames: int = 16
+    enroll_max_frames: int = 20
+    enroll_templates: int = 5
+    enroll_min_templates: int = 3
+    enroll_min_quality: float = 0.60
+    frame_max_bytes: int = 400_000  # par image (JPEG)
+    pending_2fa_seconds: int = 120  # délai pour présenter son visage après le mot de passe
+    face_cipher: str = "local"  # local (AES-GCM) | vault (Vault Transit)
+    face_key_file: Path = Path("/run/secrets/face_embedding_key")
+    vault_addr: str = "http://vault:8200"
+    vault_token_file: Path = Path("/run/secrets/auth_vault_token")
+    vault_transit_key: str = "orbe-face"
     web_client_id: str = "orbe-web"  # application utilisée quand X-Client-Id est absent
 
     # Protection de la connexion

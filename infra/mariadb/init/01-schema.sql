@@ -16,6 +16,7 @@ CREATE TABLE clients (
     failed_logins  INT          NOT NULL DEFAULT 0,
     locked_until   DATETIME     NULL,
     qr_token       CHAR(22)     NULL,                  -- jeton opaque du QR « Recevoir »
+    biometric_consent_at DATETIME NULL,                -- consentement explicite à la reconnaissance faciale (RGPD art. 9)
     is_probe       BOOLEAN      NOT NULL DEFAULT FALSE, -- comptes de la sonde, exclus des vues client
     created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -38,30 +39,33 @@ CREATE TABLE client_apis (
     CONSTRAINT uq_client_apis_key UNIQUE (key_hash)
 ) ENGINE = InnoDB;
 
-CREATE TABLE passkeys (
-    id             CHAR(36)     NOT NULL,
-    client_id      CHAR(36)     NOT NULL,
-    credential_id  VARCHAR(512) NOT NULL,              -- base64url, fourni par l'appareil
-    public_key     TEXT         NOT NULL,              -- clé publique COSE, base64url
-    sign_count     BIGINT       NOT NULL DEFAULT 0,
-    device_name    VARCHAR(80)  NOT NULL,
-    created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_used_at   DATETIME     NULL,
+-- Gabarits faciaux des clients (second facteur) : embeddings de 512 float32, chiffrés et liés
+-- à leur titulaire (« local:v1:… » AES-GCM ou « vault:v1:… » Vault Transit). Aucune image stockée.
+CREATE TABLE client_face_templates (
+    id             CHAR(36)      NOT NULL,
+    client_id      CHAR(36)      NOT NULL,
+    embedding_ct   VARCHAR(4096) CHARACTER SET ascii NOT NULL,
+    embedding_dim  SMALLINT      NOT NULL DEFAULT 512,
+    model          VARCHAR(40)   NOT NULL,               -- un changement de modèle impose un ré-enrôlement
+    quality_score  DECIMAL(4, 3) NOT NULL,
+    captured_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT uq_passkeys_credential UNIQUE (credential_id),
-    CONSTRAINT fk_passkeys_client FOREIGN KEY (client_id) REFERENCES clients (id),
-    INDEX ix_passkeys_client (client_id)
+    CONSTRAINT ck_client_face_templates_ct CHECK (
+        embedding_ct LIKE 'local:v%:%' OR embedding_ct LIKE 'vault:v%:%'   -- jamais de vecteur en clair
+    ),
+    CONSTRAINT fk_client_face_templates_client FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
+    INDEX ix_client_face_templates_client (client_id)
 ) ENGINE = InnoDB;
 
 CREATE TABLE sessions (
     id                 CHAR(36)     NOT NULL,          -- = jti du JWT
     client_id          CHAR(36)     NOT NULL,
     client_api_id      VARCHAR(40)  NOT NULL,
-    passkey_id         CHAR(36)     NULL,              -- passkey qui a confirmé la session
+    face_template_id   CHAR(36)     NULL,              -- gabarit facial qui a confirmé la session
     status             ENUM ('pending_2fa', 'active', 'revoked', 'expired') NOT NULL,
-    factors            VARCHAR(40)  NOT NULL,          -- « pwd » ou « pwd,passkey »
-    webauthn_challenge VARCHAR(128) NULL,              -- défi en cours (connexion ou enregistrement)
-    challenge_purpose  ENUM ('login', 'register') NULL,
+    factors            VARCHAR(40)  NOT NULL,          -- « pwd » ou « pwd,face »
+    challenge          VARCHAR(16)  NULL,              -- consigne du test du vivant : left | right
+    face_score         DECIMAL(4, 3) NULL,             -- similarité retenue à la connexion
     ip_address         VARCHAR(45)  NULL,
     opened_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     expires_at         DATETIME(3)  NOT NULL,
@@ -70,7 +74,7 @@ CREATE TABLE sessions (
     PRIMARY KEY (id),
     CONSTRAINT fk_sessions_client FOREIGN KEY (client_id) REFERENCES clients (id),
     CONSTRAINT fk_sessions_client_api FOREIGN KEY (client_api_id) REFERENCES client_apis (id),
-    CONSTRAINT fk_sessions_passkey FOREIGN KEY (passkey_id) REFERENCES passkeys (id) ON DELETE SET NULL,
+    CONSTRAINT fk_sessions_face_template FOREIGN KEY (face_template_id) REFERENCES client_face_templates (id) ON DELETE SET NULL,
     INDEX ix_sessions_client (client_id, status)
 ) ENGINE = InnoDB;
 

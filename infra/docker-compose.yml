@@ -85,7 +85,9 @@ services:
       AUTH_DB_HOST: mariadb
       AUTH_DB_PASSWORD_FILE: /run/secrets/auth_db_password
       AUTH_JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
-    secrets: [auth_db_password, jwt_private_key]
+      AUTH_FACE_ENGINE: insightface   # modèle embarqué dans l'image (buffalo_s)
+      AUTH_FACE_KEY_FILE: /run/secrets/face_embedding_key
+    secrets: [auth_db_password, jwt_private_key, face_embedding_key]
     depends_on:
       mariadb: { condition: service_healthy }
     expose:
@@ -94,7 +96,7 @@ services:
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    mem_limit: 256m
+    mem_limit: 1g   # modèle de reconnaissance faciale chargé en mémoire
     restart: unless-stopped
 
   oorbe-payment-service:
@@ -199,3 +201,4 @@ secrets:
   probe_api_key:           { file: ../secrets/probe_api_key }
   jwt_private_key:         { file: ../secrets/jwt_private_key.pem }
   jwt_public_key:          { file: ../secrets/jwt_public_key.pem }
+  face_embedding_key:      { file: ../secrets/face_embedding_key }

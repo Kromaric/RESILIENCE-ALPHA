@@ -18,7 +18,7 @@ def test_me_returns_the_profile_with_a_masked_phone(add_client, token, client):
         "phone_masked": "+33 6 •• •• •• 78",
         "display_name": "Camille Test",
         "factors": ["pwd"],
-        "passkey_count": 0,
+        "face_enrolled": False,
     }
 
 
