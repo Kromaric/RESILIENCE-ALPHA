@@ -1,6 +1,6 @@
 # Assistant opérateur (assistant-rag ; le modèle tourne sur la VM Ollama, infra/ollama/) : inclus ici.
-include:
-  - docker-compose.rag.yml
+#include:
+#  - docker-compose.rag.yml
 
 services:
   prometheus:
@@ -67,7 +67,7 @@ services:
     image: grafana/grafana-oss:latest
     container_name: grafana
     ports:
-      - "127.0.0.1:3000:3000"   # PC Hôte uniquement (lecture anonyme activée ci-dessous)
+      - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana-provisioning:/etc/grafana/provisioning
@@ -80,20 +80,6 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     secrets: [grafana_admin_password]
     restart: unless-stopped
-
-  safeline-waf:
-    image: chaitin/safeline-tengine:latest
-    container_name: safeline-waf
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      - UPSTREAM_DASHBOARD=http://oorbe-dashboard:8080
-      - UPSTREAM_INTERFACE=http://oorbe-interface:8081
-    restart: unless-stopped
-    depends_on:
-      - oorbe-auth-service
-      - oorbe-payment-service
 
 
 ############## SERVICES OORBE  ############
@@ -129,7 +115,6 @@ services:
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    mem_limit: 1g   # modèle de reconnaissance faciale chargé en mémoire
     restart: unless-stopped
 
   oorbe-payment-service:
@@ -184,33 +169,14 @@ services:
     depends_on:
       - oorbe-auth-service
       - mariadb
-    expose:
-      - "8006"   # relayé par le Nginx du dashboard sous /bo, jamais publié
+    ports:
+      - "8006:8006"
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 128m
     restart: unless-stopped
-
-  #oorbe-dashboard:
-    #build:
-     # context: ..
-     # dockerfile: ./dockerfiles/Dockerfile-dashboard
-    #container_name: oorbe-dashboard
-    #expose:
-    #  - "8080"
-   # restart: unless-stopped
-
-  #oorbe-interface:
-   # build:
-     # context: ..
-     # dockerfile: ./dockerfiles/Dockerfile-interface
-    #container_name: oorbe-interface
-    #expose:
-     # - "8081"
-    #restart: unless-stopped
-
 
   mariadb:
     image: mariadb:latest
