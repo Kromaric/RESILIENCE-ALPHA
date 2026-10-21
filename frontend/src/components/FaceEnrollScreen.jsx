@@ -1,27 +1,32 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, ScanFace, CheckCircle2, AlertCircle, ShieldCheck, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ScanFace, CheckCircle2, AlertCircle, ShieldCheck, RefreshCw, CameraOff, Loader2 } from 'lucide-react';
 import { useApp } from '../context/useApp';
-import { enrollFace, generateSimulatedEnrollFrames } from '../services/api';
+import { enrollFace } from '../services/api';
 
 /**
  * Screen: Biometric Facial Enrollment (RGPD Art. 9).
  * Allows the user to register their face with explicit consent.
- * Captures 16 sequential frames while slowly sweeping head from left to right.
+ * Strictly requires an active camera stream with live frames.
  * No emojis used.
  */
 export default function FaceEnrollScreen() {
-  const { authToken, user, setCurrentScreen, syncBackendData } = useApp();
+  const { authToken, setCurrentScreen, syncBackendData } = useApp();
 
   const [consentChecked, setConsentChecked] = useState(false);
   const [enrollState, setEnrollState] = useState('IDLE'); // 'IDLE', 'CAPTURING', 'ENROLLED', 'ERROR'
   const [capturedCount, setCapturedCount] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
-  const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
+
+  // Camera state: 'CHECKING' | 'ACTIVE' | 'ERROR'
+  const [cameraStatus, setCameraStatus] = useState('CHECKING');
+  const [cameraError, setCameraError] = useState('');
+  const [cameraRetry, setCameraRetry] = useState(0);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const isEnrollingRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   const totalFrames = 16;
   const intervalMs = 250;
@@ -46,11 +51,92 @@ export default function FaceEnrollScreen() {
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // Identity name for simulated frames matching current user
-  const accountIdentity = user?.email ? user.email.split('@')[0] : 'user';
+  const retryCamera = () => {
+    setCameraStatus('CHECKING');
+    setCameraError('');
+    setCameraRetry((c) => c + 1);
+  };
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    let streamInstance = null;
+
+    async function startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (!isMountedRef.current) return;
+        setCameraStatus('ERROR');
+        setCameraError("Votre navigateur ne supporte pas l'accès à la caméra.");
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 640 },
+            height: { ideal: 640 },
+          },
+        });
+
+        if (!isMountedRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamInstance = stream;
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play().then(() => {
+              const track = stream.getVideoTracks()[0];
+              if (track && track.readyState === 'live' && videoRef.current.videoWidth > 0) {
+                setCameraStatus('ACTIVE');
+              } else {
+                setCameraStatus('ERROR');
+                setCameraError('Le flux vidéo de la caméra est indisponible.');
+              }
+            }).catch((playErr) => {
+              setCameraStatus('ERROR');
+              setCameraError('Impossible de démarrer la vidéo : ' + playErr.message);
+            });
+          };
+        }
+      } catch (err) {
+        console.warn('Webcam initialization failed in FaceEnroll:', err);
+        if (!isMountedRef.current) return;
+        setCameraStatus('ERROR');
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setCameraError("Accès à la caméra refusé. Veuillez autoriser l'accès dans les paramètres de votre navigateur.");
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          setCameraError('Aucune caméra détectée sur votre appareil.');
+        } else {
+          setCameraError("Erreur d'accès à la caméra : " + (err.message || 'Périphérique indisponible.'));
+        }
+      }
+    }
+
+    startCamera();
+
+    return () => {
+      isMountedRef.current = false;
+      if (streamInstance) {
+        streamInstance.getTracks().forEach((track) => track.stop());
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [cameraRetry]);
 
   // Perform multi-frame enrollment capture
-  const startEnrollment = useCallback(async (useSimulation = false) => {
+  const startEnrollment = useCallback(async () => {
+    if (cameraStatus !== 'ACTIVE') {
+      setErrorMessage('La caméra doit être active pour capturer votre visage.');
+      return;
+    }
     if (!consentChecked) {
       setErrorMessage('Veuillez cocher la case de consentement RGPD pour continuer.');
       return;
@@ -62,44 +148,32 @@ export default function FaceEnrollScreen() {
     setCapturedCount(0);
 
     try {
-      let frames = [];
+      const frames = [];
 
-      if (useSimulation || cameraPermissionDenied) {
-        frames = generateSimulatedEnrollFrames(accountIdentity, totalFrames);
-        for (let i = 1; i <= totalFrames; i++) {
-          setCapturedCount(i);
-          await sleep(100);
+      for (let i = 0; i < totalFrames; i++) {
+        const frameB64 = captureCurrentFrameB64();
+        if (frameB64) {
+          frames.push(frameB64);
         }
+        setCapturedCount(i + 1);
+        if (i < totalFrames - 1) {
+          await sleep(intervalMs);
+        }
+      }
+
+      if (frames.length < 6) {
+        throw new Error('Capture insuffisante : assurez-vous que votre caméra diffuse une image nette.');
+      }
+
+      // Call backend enrollment endpoint with real camera frames
+      if (authToken) {
+        await enrollFace(frames, authToken);
       } else {
-        for (let i = 0; i < totalFrames; i++) {
-          const frameB64 = captureCurrentFrameB64();
-          if (frameB64) {
-            frames.push(frameB64);
-          }
-          setCapturedCount(i + 1);
-          if (i < totalFrames - 1) {
-            await sleep(intervalMs);
-          }
-        }
-      }
-
-      if (frames.length === 0) {
-        frames = generateSimulatedEnrollFrames(accountIdentity, totalFrames);
-      }
-
-      // Call backend enrollment endpoint if token is present
-      if (authToken && authToken !== 'demo-token') {
-        try {
-          await enrollFace(frames, authToken);
-        } catch (apiErr) {
-          console.warn('Backend enrollment warning:', apiErr.message);
-          // If in local mock or demo fallback, rethrow with clear error message
-          throw apiErr;
-        }
+        throw new Error('Session non authentifiée. Veuillez vous reconnecter.');
       }
 
       setEnrollState('ENROLLED');
-      await sleep(1200);
+      await sleep(1000);
 
       if (authToken) {
         await syncBackendData(authToken);
@@ -107,60 +181,11 @@ export default function FaceEnrollScreen() {
       setCurrentScreen('HOME');
     } catch (err) {
       setEnrollState('ERROR');
-      setErrorMessage(err.message || "Échec de l'enregistrement. Réessayez dans de bonnes conditions d'éclairage.");
+      setErrorMessage(err.message || "Échec de l'enregistrement. Vérifiez votre éclairage et réessayez.");
     } finally {
       isEnrollingRef.current = false;
     }
-  }, [consentChecked, cameraPermissionDenied, captureCurrentFrameB64, accountIdentity, authToken, syncBackendData, setCurrentScreen]);
-
-  // Request webcam stream
-  useEffect(() => {
-    let isMounted = true;
-
-    async function initCamera() {
-      try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error('Media devices not supported');
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'user',
-            width: { ideal: 640 },
-            height: { ideal: 640 },
-          },
-        });
-
-        if (!isMounted) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-
-        setCameraPermissionDenied(false);
-      } catch (err) {
-        console.warn('Webcam unavailable or permission denied:', err.message);
-        if (isMounted) {
-          setCameraPermissionDenied(true);
-        }
-      }
-    }
-
-    initCamera();
-
-    return () => {
-      isMounted = false;
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-    };
-  }, []);
+  }, [cameraStatus, consentChecked, captureCurrentFrameB64, authToken, syncBackendData, setCurrentScreen]);
 
   const handleSkip = () => {
     setCurrentScreen('HOME');
@@ -192,67 +217,80 @@ export default function FaceEnrollScreen() {
             Activer la reconnaissance faciale
           </h2>
           <p className="text-xs text-[#55636a] max-w-[300px] mt-1 leading-relaxed">
-            Sécurisez vos connexions et paiements avec votre visage. Vos images ne sont jamais conservées.
+            Sécurisez vos connexions et paiements avec votre visage. Vos photos brutes ne sont jamais conservées.
           </p>
         </div>
 
-        {/* Central Camera / Viewport */}
+        {/* Central Camera Viewport */}
         <div className="mt-4 mb-2 flex flex-col items-center">
           <div
             className={`w-52 h-52 rounded-full overflow-hidden border-4 relative mx-auto flex items-center justify-center transition-colors duration-300 shadow-md ${
               enrollState === 'ENROLLED'
                 ? 'border-[#1e7a45] shadow-[0_0_24px_rgba(30,122,69,0.35)]'
-                : enrollState === 'ERROR'
+                : enrollState === 'ERROR' || cameraStatus === 'ERROR'
                 ? 'border-[#c81e1e] shadow-[0_0_24px_rgba(200,30,30,0.35)]'
                 : enrollState === 'CAPTURING'
                 ? 'border-[#0e5a6b] shadow-[0_0_20px_rgba(14,90,107,0.25)]'
+                : cameraStatus === 'ACTIVE'
+                ? 'border-[#0e5a6b]'
                 : 'border-[#d5dcdf]'
             }`}
           >
             {/* Live Camera Video */}
-            {!cameraPermissionDenied ? (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover scale-x-[-1]"
-              />
-            ) : (
-              <div className="w-full h-full bg-[#dcecef] flex flex-col items-center justify-center text-[#0a4552]">
-                <ScanFace className="w-18 h-18 stroke-[1.25] text-[#0e5a6b]" />
-                <span className="text-[11px] font-mono font-medium mt-1 text-[#0a4552]">
-                  Caméra non disponible
-                </span>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`w-full h-full object-cover scale-x-[-1] ${
+                cameraStatus === 'ACTIVE' ? 'block' : 'hidden'
+              }`}
+            />
+
+            {/* Camera Checking / Initializing placeholder */}
+            {cameraStatus === 'CHECKING' && (
+              <div className="w-full h-full bg-[#f0f4f6] flex flex-col items-center justify-center text-[#55636a] p-4 text-center">
+                <Loader2 className="w-10 h-10 animate-spin text-[#0e5a6b] mb-2" />
+                <span className="text-xs font-medium">Activation de la caméra...</span>
+              </div>
+            )}
+
+            {/* Camera Error / Inactive placeholder */}
+            {cameraStatus === 'ERROR' && (
+              <div className="w-full h-full bg-[#ffdad6]/40 flex flex-col items-center justify-center text-[#93000a] p-4 text-center">
+                <CameraOff className="w-12 h-12 stroke-[1.5] text-[#ba1a1a] mb-1" />
+                <span className="text-xs font-semibold">Caméra inactive</span>
               </div>
             )}
 
             <canvas ref={canvasRef} className="hidden" />
 
-            {/* Reticles */}
-            <svg
-              className="absolute inset-0 w-full h-full pointer-events-none p-5"
-              viewBox="0 0 100 100"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M 20 30 L 20 20 L 30 20 M 70 20 L 80 20 L 80 30 M 80 70 L 80 80 L 70 80 M 30 80 L 20 80 L 20 70"
-                stroke={
-                  enrollState === 'ENROLLED'
-                    ? '#1e7a45'
-                    : enrollState === 'ERROR'
-                    ? '#c81e1e'
-                    : '#0e5a6b'
-                }
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={enrollState === 'IDLE' ? 0.4 : 0.85}
-              />
-            </svg>
+            {/* Target Reticles (active only when camera is live) */}
+            {cameraStatus === 'ACTIVE' && (
+              <svg
+                className="absolute inset-0 w-full h-full pointer-events-none p-5"
+                viewBox="0 0 100 100"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M 20 30 L 20 20 L 30 20 M 70 20 L 80 20 L 80 30 M 80 70 L 80 80 L 70 80 M 30 80 L 20 80 L 20 70"
+                  stroke={
+                    enrollState === 'ENROLLED'
+                      ? '#1e7a45'
+                      : enrollState === 'ERROR'
+                      ? '#c81e1e'
+                      : '#0e5a6b'
+                  }
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={enrollState === 'IDLE' ? 0.6 : 0.9}
+                />
+              </svg>
+            )}
 
-            {/* Laser scanning line */}
+            {/* Laser scanning line during capture */}
             {enrollState === 'CAPTURING' && (
               <div className="absolute left-6 right-6 h-[2px] bg-[#0e5a6b] shadow-[0_0_8px_#0e5a6b] animate-scanline pointer-events-none" />
             )}
@@ -274,9 +312,26 @@ export default function FaceEnrollScreen() {
 
           {/* Status and Progress Indicator */}
           <div className="mt-3 px-6 text-center min-h-[36px] flex flex-col items-center justify-center">
-            {enrollState === 'IDLE' && (
+            {cameraStatus === 'ERROR' && (
+              <div className="flex flex-col items-center gap-1.5 max-w-[320px]">
+                <div className="bg-[#ffdad6] text-[#93000a] text-xs p-2.5 rounded-xl flex items-start gap-2 shadow-xs text-left">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#ba1a1a]" />
+                  <span>{cameraError || 'La caméra doit être activée pour enregistrer votre visage.'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={retryCamera}
+                  className="text-xs text-[#0e5a6b] font-medium hover:underline cursor-pointer inline-flex items-center gap-1 mt-0.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Réessayer d&apos;activer la caméra</span>
+                </button>
+              </div>
+            )}
+
+            {cameraStatus === 'ACTIVE' && enrollState === 'IDLE' && (
               <p className="text-[12px] text-[#55636a] max-w-[280px]">
-                Tournez lentement la tête de gauche à droite pendant la capture.
+                Caméra active. Tournez lentement la tête de gauche à droite pendant la capture.
               </p>
             )}
 
@@ -308,7 +363,7 @@ export default function FaceEnrollScreen() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => startEnrollment(false)}
+                  onClick={startEnrollment}
                   className="text-xs text-[#0e5a6b] font-medium hover:underline mt-1 cursor-pointer inline-flex items-center gap-1"
                 >
                   <RefreshCw className="w-3 h-3" />
@@ -344,14 +399,18 @@ export default function FaceEnrollScreen() {
       <div className="px-6 flex flex-col gap-2 pt-2">
         <button
           type="button"
-          onClick={() => startEnrollment(cameraPermissionDenied)}
-          disabled={!consentChecked || enrollState === 'CAPTURING' || enrollState === 'ENROLLED'}
+          onClick={startEnrollment}
+          disabled={cameraStatus !== 'ACTIVE' || !consentChecked || enrollState === 'CAPTURING' || enrollState === 'ENROLLED'}
           className="w-full h-11 rounded-xl bg-[#0e5a6b] hover:bg-[#0a4552] text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <ScanFace className="w-4 h-4" />
           <span>
-            {cameraPermissionDenied
-              ? 'Enregistrer le gabarit (Simulé)'
+            {cameraStatus === 'CHECKING'
+              ? 'Activation de la caméra...'
+              : cameraStatus === 'ERROR'
+              ? 'Caméra requise pour enrôlement'
+              : enrollState === 'CAPTURING'
+              ? 'Capture en cours...'
               : "Démarrer l'enregistrement biométrique"}
           </span>
         </button>

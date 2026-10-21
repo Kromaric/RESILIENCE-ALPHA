@@ -179,6 +179,7 @@ export function AppProvider({ children }) {
     accountMasked: 'FR76 •••• •••• 0142',
     bankLabel: 'Banque Démo',
     initials: 'CT',
+    faceEnrolled: false,
   });
 
   const [authToken, setAuthToken] = useState('demo-token');
@@ -258,6 +259,7 @@ export function AppProvider({ children }) {
           name: meResult.display_name || prev.name,
           email: meResult.email || prev.email,
           phone: meResult.phone_masked || prev.phone,
+          faceEnrolled: Boolean(meResult.face_enrolled),
           initials: (meResult.display_name || 'CT')
             .split(' ')
             .map((n) => n[0])
@@ -308,7 +310,6 @@ export function AppProvider({ children }) {
     try {
       await sendPaymentApi(
         {
-          
           recipientId: selectedContact.id.length === 36 ? selectedContact.id : undefined,
           recipient: selectedContact.rawPhone || selectedContact.email,
           amount_cents: amountCents,
@@ -317,7 +318,6 @@ export function AppProvider({ children }) {
         authToken
       );
     } catch (err) {
-      // In demo resilience mode, handled gracefully with fallback logging
       console.warn('Payment executed via resilience fallback:', err.message);
     }
 
@@ -400,7 +400,7 @@ export function AppProvider({ children }) {
     }
   }, [authToken, pending2FA, executePayment, syncBackendData]);
 
-  // Legacy on2FASuccess callback (also supports demo bypass)
+  // Legacy on2FASuccess callback
   const on2FASuccess = useCallback(async () => {
     await completeFaceAuth();
   }, [completeFaceAuth]);
@@ -422,6 +422,15 @@ export function AppProvider({ children }) {
     setSessionId(null);
     setPending2FA(null);
     setFaceChallenge(null);
+    setUser({
+      name: 'Camille Test',
+      email: 'camille@orbe.test',
+      phone: '+33 6 •• •• •• 78',
+      accountMasked: 'FR76 •••• •••• 0142',
+      bankLabel: 'Banque Démo',
+      initials: 'CT',
+      faceEnrolled: false,
+    });
     setCurrentScreen('LOGIN');
   }, []);
 
