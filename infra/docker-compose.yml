@@ -154,8 +154,10 @@ services:
       context: ..
       dockerfile: ./dockerfiles/Dockerfile-dashboard
     container_name: oorbe-dashboard
-    ports:
-      - "8083:8083"
+    expose:
+      - "8083"
+    #ports:
+    #  - "8083:8083"
     restart: unless-stopped
 
   oorbe-interface:
@@ -163,8 +165,10 @@ services:
       context: ..
       dockerfile: ./dockerfiles/Dockerfile-interface
     container_name: oorbe-interface
-    ports:
-      - "8081:8081"
+    expose:
+      - "8081"
+    #ports:
+    #  - "8081:8081"
     restart: unless-stopped
 
   oorbe-bo-api:
@@ -241,6 +245,24 @@ services:
     cap_add:
       - IPC_LOCK
     command: server
+    restart: unless-stopped
+
+  waf:
+    image: owasp/modsecurity-crs:nginx
+    container_name: waf
+    ports:
+      - "80:8080"
+      - "443:8443"
+    environment:
+      MODSEC_RULE_ENGINE: "On"           # "DetectionOnly" pour tester sans bloquer
+      PARANOIA: "1"
+    volumes:
+      - ./waf/vhosts.conf:/etc/nginx/templates/conf.d/default.conf.template:ro
+      - ./waf/certs:/etc/nginx/certs:ro
+    depends_on:
+      - oorbe-dashboard
+      - oorbe-interface
+    security_opt: [no-new-privileges:true]
     restart: unless-stopped
 
 volumes:
