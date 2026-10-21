@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { ArrowRight, Lock } from 'lucide-react'
 import { suggestions } from '../data/assistant'
 import { api } from '../api/client'
@@ -16,7 +17,7 @@ export default function Assistant() {
   const canAsk = operator.role === 'operator'
   const [messages, setMessages] = useState([])
   const [sources, setSources] = useState([])
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(useLocation().state?.question ?? '')
   const [loading, setLoading] = useState(false)
   const listRef = useRef(null)
 

@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ThumbsUp, ThumbsDown } from 'lucide-react'
+import { findPage } from '../../data/docs'
 
 export default function ChatMessage({ message }) {
   const [feedback, setFeedback] = useState(null)
@@ -37,11 +39,22 @@ export default function ChatMessage({ message }) {
 
             {message.sources.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
-                {message.sources.map((s, i) => (
-                  <span key={i} className="rounded-md border border-line px-2 py-1 text-[11px] text-gray-300">
-                    <span className="font-mono text-accent">[{i + 1}]</span> {s.doc}
-                  </span>
-                ))}
+                {message.sources.map((s, i) => {
+                  const page = findPage(s.doc)
+                  const label = (
+                    <>
+                      <span className="font-mono text-accent">[{i + 1}]</span> {page?.title ?? s.doc}
+                    </>
+                  )
+                  const chip = 'rounded-md border border-line px-2 py-1 text-[11px] text-gray-300'
+                  return page ? (
+                    <Link key={i} to={`/docs/${page.path}`} title={`docs/${page.path}`} className={`${chip} hover:border-accent hover:text-white`}>
+                      {label}
+                    </Link>
+                  ) : (
+                    <span key={i} className={chip}>{label}</span>
+                  )
+                })}
               </div>
             )}
 

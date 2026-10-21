@@ -13,7 +13,7 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
           <Route path="/" element={<Supervision />} />
-          <Route path="/docs" element={<Documentation />} />
+          <Route path="/docs/*" element={<Documentation />} />
           <Route path="/assistant" element={<Assistant />} />
         </Route>
       </Route>

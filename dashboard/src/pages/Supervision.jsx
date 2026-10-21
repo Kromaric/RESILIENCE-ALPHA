@@ -147,8 +147,8 @@ export default function Supervision() {
         <Loading error={overview.error} />
       ) : (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {(live ? overview.data.kpis : demo.kpis).map((kpi) => (
-            <KpiCard key={kpi.key ?? kpi.label} {...kpi} />
+          {(live ? overview.data.kpis : demo.kpis).map(({ key, ...kpi }) => (
+            <KpiCard key={key ?? kpi.label} {...kpi} />
           ))}
         </div>
       )}
