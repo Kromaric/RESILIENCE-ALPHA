@@ -55,7 +55,7 @@ services:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: cadvisor
     ports:
-      - "8088:8080"
+      - "8080:8080"
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -104,10 +104,7 @@ services:
       AUTH_FACE_ENGINE: insightface   # modèle embarqué dans l'image (buffalo_s)
       AUTH_FACE_KEY_FILE: /run/secrets/face_embedding_key
       # Secrets lus dans Vault (repli : fichiers /run/secrets), voir app/vault.py
-      AUTH_VAULT_ADDR: http://vault:8200
-      AUTH_VAULT_KV_PATH: secret/data/oorbe/config
-      AUTH_VAULT_TOKEN_FILE: /run/secrets/oorbe_vault_token
-    secrets: [auth_db_password, jwt_private_key, face_embedding_key, oorbe_vault_token]
+    secrets: [auth_db_password, jwt_private_key, face_embedding_key]
     depends_on:
       mariadb: { condition: service_healthy }
     expose:
