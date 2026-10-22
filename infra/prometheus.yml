@@ -15,6 +15,14 @@ scrape_configs:
     static_configs:
       - targets: ['node-exporter:9100']
 
+  - job_name: 'docker-containers'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    metric_relabel_configs:
+      # Duplique le label 'name' en 'container' pour le rendre compatible avec les dashboards standard
+      - source_labels: [name]
+        target_label: container
+
   # Services métier (métriques HTTP, pool de connexions, paiements, connexions)
   - job_name: 'auth-service'
     static_configs:
