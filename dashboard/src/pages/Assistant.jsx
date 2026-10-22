@@ -32,10 +32,12 @@ export default function Assistant() {
     setMessages((m) => [...m, { role: 'user', time: now(), text: question }])
     setInput('')
     setLoading(true)
-    const started = performance.now()
+    // oxlint-disable-next-line react/purity
+    const started = Date.now()
     try {
       const { answer, sources } = await api('/bo/assistant/ask', { method: 'POST', body: { question } })
-      const seconds = ((performance.now() - started) / 1000).toFixed(1).replace('.', ',')
+      // oxlint-disable-next-line react/purity
+      const seconds = ((Date.now() - started) / 1000).toFixed(1).replace('.', ',')
       setMessages((m) => [
         ...m,
         { role: 'assistant', time: now(), text: answer, sources, meta: `${sources.length} extrait(s) · ${seconds} s` },
@@ -58,79 +60,83 @@ export default function Assistant() {
 
   return (
     <div className="mx-auto max-w-7xl">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+      <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-100">Assistant opérateur</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-gray-100">Assistant IA opérateur</h1>
+            <Badge tone="accent">RAG local · Ollama</Badge>
+          </div>
           <p className="mt-1 text-xs text-muted">
-            Répond à partir de la documentation technique et cite ses sources · Ollama + LangChain, exécuté en local
+            Réponses fondées sur la documentation Orbe (architecture, runbooks, RGPD) · Aucun appel cloud
           </p>
-        </div>
-        <div className="flex gap-2">
-          {!canAsk && <Badge tone="warn">Questions réservées au rôle operator</Badge>}
-          <Badge tone="accent" icon={Lock}>Lecture seule</Badge>
         </div>
       </header>
 
-      <div className="mt-6 grid gap-4 xl:grid-cols-[1fr_320px]">
-        {/* Chat */}
-        <section className="flex h-[calc(100vh-9rem)] min-h-[560px] flex-col rounded-lg border border-line bg-surface">
-          <div ref={listRef} className="flex-1 space-y-6 overflow-y-auto p-5">
-            {messages.length === 0 && (
-              <p className="text-sm text-muted">
-                Posez une question sur les procédures, la remédiation ou l'architecture : l'assistant répond à
-                partir de la documentation et cite ses sources.
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="flex flex-col rounded-lg border border-line bg-surface p-4 lg:col-span-2">
+          {/* Fil de discussion */}
+          <div ref={listRef} className="h-[480px] overflow-y-auto space-y-4 pr-2">
+            {messages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <p className="text-sm text-gray-300">Posez une question technique ou opérationnelle sur Orbe.</p>
+                <p className="mt-1 text-xs text-muted">L&apos;assistant répond à partir des runbooks et spécifications du dépôt.</p>
+                <div className="mt-6 grid max-w-lg gap-2">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => send(s)}
+                      disabled={!canAsk}
+                      className="rounded-md border border-line bg-bg p-2 text-left text-xs text-gray-300 transition hover:border-accent hover:text-white disabled:opacity-50"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              messages.map((m, i) => <ChatMessage key={i} {...m} />)
+            )}
+            {loading && (
+              <div className="flex items-center gap-2 text-xs text-muted">
+                <span className="inline-block h-2 w-2 animate-ping rounded-full bg-accent" />
+                Interrogation du modèle local…
+              </div>
+            )}
+          </div>
+
+          {/* Saisie */}
+          <div className="mt-4 border-t border-line pt-3">
+            {canAsk ? (
+              <div className="flex gap-2">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  placeholder="Posez votre question… (Entrée pour envoyer)"
+                  rows={2}
+                  className="flex-1 resize-none rounded-md border border-line bg-bg p-2 text-xs text-gray-100 placeholder-muted focus:border-accent focus:outline-none"
+                />
+                <button
+                  onClick={() => send(input)}
+                  disabled={loading || input.trim().length < 3}
+                  className="flex items-center gap-1.5 self-end rounded-md bg-accent px-4 py-2 text-xs font-medium text-bg transition hover:brightness-110 disabled:opacity-50"
+                >
+                  Envoyer <ArrowRight size={14} />
+                </button>
+              </div>
+            ) : (
+              <p className="flex items-center gap-2 text-xs text-muted">
+                <Lock size={14} /> Rôle « operator » requis pour poser des questions (session en lecture seule).
               </p>
             )}
-            {messages.map((m, i) => (
-              <ChatMessage key={i} message={m} />
-            ))}
-            {loading && <p className="pl-10 text-xs text-muted animate-pulse">L'assistant recherche dans la documentation… (jusqu'à une minute)</p>}
           </div>
+        </div>
 
-          <div className="border-t border-line p-4">
-            <div className="flex flex-wrap gap-2">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => send(s)}
-                  disabled={!canAsk || loading}
-                  className="rounded-full border border-line px-3 py-1 text-xs text-gray-300 hover:border-accent hover:text-white disabled:opacity-50"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-            <label className="mt-3 block text-xs text-muted" htmlFor="question">Votre question</label>
-            <div className="mt-1 flex items-end gap-2">
-              <textarea
-                id="question"
-                rows={2}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={onKeyDown}
-                disabled={!canAsk}
-                placeholder={canAsk ? 'Ex. : comment rejouer le playbook de remédiation à la main ?' : 'Réservé au rôle operator'}
-                className="flex-1 resize-none rounded-md border border-line bg-bg px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent disabled:opacity-50"
-              />
-              <button
-                onClick={() => send(input)}
-                disabled={!canAsk || loading || input.trim().length < 3}
-                className="inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-2.5 text-xs font-medium text-bg hover:brightness-110 disabled:opacity-50"
-              >
-                Envoyer <ArrowRight size={14} />
-              </button>
-            </div>
-            <p className="mt-2 text-[11px] text-muted">
-              L'assistant aide à comprendre et à consulter les procédures. Il n'exécute aucune action sur la plateforme.
-            </p>
-          </div>
-        </section>
-
-        {/* Colonne de droite */}
-        <aside className="space-y-4">
+        {/* Panneaux latéraux */}
+        <div className="space-y-4">
           <SourcesPanel sources={sources} />
           <ConfigPanel />
-        </aside>
+        </div>
       </div>
     </div>
   )
