@@ -1,0 +1,25 @@
+# Règles d'alerte de la détection ML (CADRAGE §6.4). Le seuil n'est pas codé ici : il est
+# calibré par ml/evaluate.py, stocké dans le modèle et publié par detector-ml
+# (anomaly_threshold), pour qu'un réentraînement ne désynchronise jamais règle et modèle.
+groups:
+  - name: anomaly
+    interval: 5s
+    rules:
+      - alert: PaymentAnomaly
+        expr: anomaly_score{target="payment-service"} > on(target) anomaly_threshold{target="payment-service"}
+        for: 10s
+        labels:
+          severity: critical
+          incident_type: resource_exhaustion
+          target: payment-service
+        annotations:
+          summary: "Comportement anormal de payment-service (score {{ $value | printf \"%.2f\" }})"
+          details: "GET http://detector-ml:8004/score pour les variables en cause (top_deviations)"
+
+      # Sans détecteur, pas de détection : à voir sur le dashboard, pas de remédiation
+      - alert: DetectorDown
+        expr: up{job="detector-ml"} == 0 or time() - detector_last_success_timestamp_seconds > 30
+        for: 15s
+        labels:
+          severity: warning
+          target: detector-ml
