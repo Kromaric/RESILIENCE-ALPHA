@@ -1,6 +1,6 @@
 # Assistant opérateur (assistant-rag ; le modèle tourne sur la VM Ollama, infra/ollama/) : inclus ici.
-#include:
-#  - docker-compose.rag.yml
+include:
+  - docker-compose.rag.yml
 
 services:
   prometheus:
@@ -8,6 +8,7 @@ services:
     container_name: prometheus
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus-rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -152,10 +153,12 @@ services:
   oorbe-dashboard:
     build:
       context: ..
-      dockerfile: ./dockerfiles/Dockerfile-interface
-    container_name: oorbe-interface
+      dockerfile: ./dockerfiles/Dockerfile-dashboard
+    container_name: oorbe-dashboard
     expose:
-      - "8080"
+      - "8083"
+    #ports:
+    #  - "8083:8083"
     restart: unless-stopped
 
   oorbe-interface:
@@ -165,6 +168,8 @@ services:
     container_name: oorbe-interface
     expose:
       - "8081"
+    #ports:
+    #  - "8081:8081"
     restart: unless-stopped
 
   oorbe-bo-api:
@@ -194,6 +199,27 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 128m
+    restart: unless-stopped
+
+  detector-ml:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-detector
+    container_name: detector-ml
+    environment:
+      DETECTOR_PROMETHEUS_URL: http://prometheus:9090
+      DETECTOR_LOKI_URL: http://loki:3100
+    volumes:
+      - ../ml/models:/models:ro   # modèle produit par ml/train.py + ml/evaluate.py
+    depends_on: [prometheus, loki]
+    expose:
+      - "8004"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 0.5
     restart: unless-stopped
 
   mariadb:
@@ -241,6 +267,24 @@ services:
     cap_add:
       - IPC_LOCK
     command: server
+    restart: unless-stopped
+
+  waf:
+    image: owasp/modsecurity-crs:nginx
+    container_name: waf
+    ports:
+      - "80:8080"
+      - "443:8443"
+    environment:
+      MODSEC_RULE_ENGINE: "On"           # "DetectionOnly" pour tester sans bloquer
+      PARANOIA: "1"
+    volumes:
+      - ./waf/vhosts.conf:/etc/nginx/templates/conf.d/default.conf.template:ro
+      - ./waf/certs:/etc/nginx/certs:ro
+    depends_on:
+      - oorbe-dashboard
+      - oorbe-interface
+    security_opt: [no-new-privileges:true]
     restart: unless-stopped
 
 volumes:

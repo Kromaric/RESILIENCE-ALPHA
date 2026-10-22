@@ -29,6 +29,7 @@ dist/
 
 # --- ML ---
 ml/data/raw/
+ml/data/synth/
 *.ipynb_checkpoints
 
 # --- Données et sauvegardes locales ---

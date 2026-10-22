@@ -21,7 +21,7 @@ services:
     environment:
       # Adresse non renseignée : l'assistant démarre mais reste « indexing » (voir /health/ready),
       # sans bloquer le reste de la pile
-      RAG_OLLAMA_BASE_URL: ${RAG_OLLAMA_BASE_URL:-http://ollama-vm.invalid:11434}
+      RAG_OLLAMA_BASE_URL: ${RAG_OLLAMA_BASE_URL:-http://172.16.89.46:11434}
       RAG_LLM_MODEL: ${RAG_LLM_MODEL:-qwen2.5:7b}
       RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-nomic-embed-text}
       RAG_REASONING: ${RAG_REASONING:-}            # « false » pour qwen3
@@ -35,7 +35,7 @@ services:
       - rag-index:/data                 # index ChromaDB, reconstruit si docs/ a changé
     networks: [rag]
     ports:
-      - "127.0.0.1:8005:8005"           # PC Hôte uniquement (dashboard, tests) ; jamais le hotspot
+      - "8005:8005"
     mem_limit: 768m
     cpus: 1.0
     pids_limit: 128
