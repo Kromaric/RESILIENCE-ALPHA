@@ -17,6 +17,15 @@ services:
       - "9090:9090"
     restart: unless-stopped
 
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    restart: unless-stopped
+
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
@@ -222,6 +231,27 @@ services:
     cpus: 0.5
     restart: unless-stopped
 
+  remediation-engine:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-remediation
+    container_name: remediation-engine
+    environment:
+      REMEDIATION_PROMETHEUS_URL: http://prometheus:9090
+      REMEDIATION_LOKI_URL: http://loki:3100
+      REMEDIATION_BLOCKLIST_PATH: /etc/nginx/blocklist/blocklist.conf
+      REMEDIATION_PAYMENT_URL: http://oorbe-payment-service:8002
+      REMEDIATION_DOCKER_SOCKET: /var/run/docker.sock
+    volumes:
+      - ./waf/blocklist:/etc/nginx/blocklist
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8003:8003"
+    depends_on:
+      - loki
+      - oorbe-payment-service
+    restart: unless-stopped
+
   mariadb:
     image: mariadb:latest
     container_name: mariadb
@@ -285,6 +315,7 @@ services:
       ALLOWED_METHODS: "GET HEAD POST OPTIONS PATCH DELETE"
     volumes:
       - ./waf/vhosts.conf:/etc/nginx/templates/conf.d/default.conf.template:ro
+      - ./waf/blocklist:/etc/nginx/blocklist:ro
       - ./waf/certs:/etc/nginx/certs:ro
     depends_on:
       - oorbe-dashboard

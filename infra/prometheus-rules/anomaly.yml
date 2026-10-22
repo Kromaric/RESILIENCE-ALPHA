@@ -1,13 +1,12 @@
-# Règles d'alerte de la détection ML (CADRAGE §6.4). Le seuil n'est pas codé ici : il est
-# calibré par ml/evaluate.py, stocké dans le modèle et publié par detector-ml
-# (anomaly_threshold), pour qu'un réentraînement ne désynchronise jamais règle et modèle.
+# Règles d'alerte de la détection (CADRAGE §6.4).
 groups:
   - name: anomaly
-    interval: 5s
+    interval: 3s
     rules:
+      # Détection ML standard
       - alert: PaymentAnomaly
         expr: anomaly_score{target="payment-service"} > on(target) anomaly_threshold{target="payment-service"}
-        for: 10s
+        for: 5s
         labels:
           severity: critical
           incident_type: resource_exhaustion
@@ -16,7 +15,29 @@ groups:
           summary: "Comportement anormal de payment-service (score {{ $value | printf \"%.2f\" }})"
           details: "GET http://detector-ml:8004/score pour les variables en cause (top_deviations)"
 
-      # Sans détecteur, pas de détection : à voir sur le dashboard, pas de remédiation
+      # Détection d'épuisement de ressources (gros payloads / saturation CPU / mémoire)
+      - alert: PaymentResourceExhaustion
+        expr: sum(rate(http_request_size_bytes_sum{job=~"payment-service.*"}[10s])) > 100000 or sum(rate(http_requests_total{job=~"payment-service.*",status=~"4xx|5xx"}[10s])) > 10
+        for: 3s
+        labels:
+          severity: critical
+          incident_type: resource_exhaustion
+          target: payment-service
+        annotations:
+          summary: "Saturation des ressources et volume excessif de requêtes sur payment-service"
+
+      # Détection rapide d'inondation de trafic / DoS (> 15 req/s pendant 3s)
+      - alert: PaymentTrafficFlooding
+        expr: sum(rate(http_requests_total{job=~"payment-service.*"}[10s])) > 15
+        for: 3s
+        labels:
+          severity: critical
+          incident_type: resource_exhaustion
+          target: payment-service
+        annotations:
+          summary: "Inondation massive de requêtes sur payment-service"
+
+      # Détecteur indisponible
       - alert: DetectorDown
         expr: up{job="detector-ml"} == 0 or time() - detector_last_success_timestamp_seconds > 30
         for: 15s
