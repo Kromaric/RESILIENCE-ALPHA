@@ -13,8 +13,8 @@ const now = () => new Date().toLocaleTimeString('fr-FR')
 
 export default function Assistant() {
   const { operator } = useAuth()
-  // POST /bo/assistant/ask est réservé au rôle « operator »
-  const canAsk = operator.role === 'operator'
+  // Accessible à tous les utilisateurs authentifiés
+  const canAsk = Boolean(operator)
   const [messages, setMessages] = useState([])
   const [sources, setSources] = useState([])
   const [input, setInput] = useState(useLocation().state?.question ?? '')
@@ -126,7 +126,7 @@ export default function Assistant() {
               </div>
             ) : (
               <p className="flex items-center gap-2 text-xs text-muted">
-                <Lock size={14} /> Rôle « operator » requis pour poser des questions (session en lecture seule).
+                <Lock size={14} /> Connexion requise pour poser des questions.
               </p>
             )}
           </div>

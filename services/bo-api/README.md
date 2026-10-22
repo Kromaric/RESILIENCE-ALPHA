@@ -110,7 +110,7 @@ comme mode démo, branché sur les données simulées.
 | Route | Rôle | Contenu |
 |---|---|---|
 | `GET /bo/incidents?limit` · `GET /bo/incidents/{id}` | viewer | Relayés tels quels depuis le moteur de remédiation (format défini par le moteur, CADRAGE §4.6) ; `503 remediation_unavailable` tant qu'il n'est pas déployé |
-| `POST /bo/assistant/ask` `{question}` | operator | `{answer, sources: [{doc, extrait}]}` depuis assistant-rag ; 10 questions par minute ; jusqu'à 60 s de réponse |
+| `POST /bo/assistant/ask` `{question}` | viewer | `{answer, sources: [{doc, extrait}]}` depuis assistant-rag ; 10 questions par minute ; jusqu'à 60 s de réponse |
 | `GET /bo/grafana` | viewer | `panels[]` `{key, title, embed_url}` à mettre dans une `<iframe>` (latence, erreurs, transactions, pool MariaDB, connexions, score d'anomalie, journaux d'erreur), `dashboards[]`, `tools[]` (liens de la barre latérale) |
 
 Grafana : tableau versionné `infra/grafana-provisioning/dashboards/orbe-supervision.json`

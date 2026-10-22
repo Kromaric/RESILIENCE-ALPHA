@@ -51,14 +51,20 @@ def test_assistant_question_is_relayed(client, upstreams, auth, caplog):
     assert all("secret123" not in str(getattr(r, "fields", "")) for r in caplog.records)
 
 
-def test_assistant_is_reserved_to_operators(client, auth):
+def test_assistant_is_accessible_to_all_authenticated_users(client, upstreams, auth):
+    upstreams.answer = {"answer": "ok", "sources": []}
     response = client.post(
         "/bo/assistant/ask",
         json={"question": "Bonjour ?"},
         headers=bearer(auth.token("viewer@orbe.test")),
     )
+    assert response.status_code == 200
 
-    assert response.status_code == 403
+    unauthenticated = client.post(
+        "/bo/assistant/ask",
+        json={"question": "Bonjour ?"},
+    )
+    assert unauthenticated.status_code == 401
 
 
 def test_assistant_is_rate_limited_per_operator(client, upstreams, auth):

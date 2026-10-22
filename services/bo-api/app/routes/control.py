@@ -79,14 +79,14 @@ async def incident(
     summary="Poser une question à l'assistant opérateur",
     responses={
         **UNAVAILABLE,
-        403: {"model": ErrorOut, "description": "Réservé au rôle « operator »"},
+        403: {"model": ErrorOut, "description": "Réservé au rôle « viewer » ou supérieur"},
         429: {"model": ErrorOut, "description": "Trop de questions (en-tête Retry-After)"},
     },
 )
 async def ask(
     body: AskRequest,
     request: Request,
-    operator: Operator = Depends(require_role("operator")),
+    operator: Operator = Depends(require_role("viewer")),
 ) -> AskResponse:
     """Relayée à assistant-rag (`POST /ask`), qui répond à partir de la documentation et
     cite ses sources. Peut prendre plusieurs secondes (modèle local)."""
