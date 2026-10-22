@@ -308,6 +308,11 @@ services:
     environment:
       MODSEC_RULE_ENGINE: "On"           # "DetectionOnly" pour tester sans bloquer
       PARANOIA: "1"
+      # Corps JSON jusqu'à 12 Mo (128 Ko par défaut) : images de la caméra pour la
+      # reconnaissance faciale (/api/auth, /bo/auth)
+      MODSEC_REQ_BODY_NOFILES_LIMIT: "12582912"
+      # Méthodes des API (GET HEAD POST OPTIONS par défaut) : effacer un visage, une habilitation…
+      ALLOWED_METHODS: "GET HEAD POST OPTIONS PATCH DELETE"
     volumes:
       - ./waf/vhosts.conf:/etc/nginx/templates/conf.d/default.conf.template:ro
       - ./waf/blocklist:/etc/nginx/blocklist:ro
