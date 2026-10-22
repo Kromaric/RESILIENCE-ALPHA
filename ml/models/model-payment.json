@@ -1,0 +1,80 @@
+{
+  "features": [
+    "req_rate",
+    "latency_p95",
+    "client_4xx_ratio",
+    "pool_saturation",
+    "pool_timeouts_rate",
+    "container_cpu",
+    "container_mem_mib",
+    "host_cpu",
+    "ip_distinct",
+    "ip_top_share",
+    "unauth_ratio"
+  ],
+  "threshold": 0.5,
+  "df_median": 0.05363657520439216,
+  "df_min": -0.15154993955643237,
+  "trained_at": "2026-10-21T14:15:14+00:00",
+  "target": "payment-service",
+  "synthetic": true,
+  "sklearn": "1.9.1",
+  "n_samples": 2124,
+  "samples_per_label": {
+    "nominal": 1062,
+    "peak": 708,
+    "offpeak": 354
+  },
+  "episodes": [
+    "synth-nominal-01",
+    "synth-nominal-02",
+    "synth-nominal-03",
+    "synth-offpeak-01",
+    "synth-peak-01",
+    "synth-peak-02"
+  ],
+  "dropped_constant": [
+    "error_5xx_ratio"
+  ],
+  "feature_descriptions": {
+    "req_rate": "Débit HTTP du service (req/s)",
+    "latency_p95": "Latence p95 (s)",
+    "client_4xx_ratio": "Part des réponses 4xx (401/403/422/429)",
+    "pool_saturation": "Saturation du pool de connexions MariaDB (0-1)",
+    "pool_timeouts_rate": "Requêtes refusées faute de connexion (/s)",
+    "container_cpu": "CPU du conteneur payment-service (cœurs)",
+    "container_mem_mib": "Mémoire du conteneur payment-service (Mio)",
+    "host_cpu": "CPU de la machine hôte (0-1)",
+    "ip_distinct": "Nombre d'IP sources distinctes",
+    "ip_top_share": "Part du trafic de l'IP la plus active (0-1)",
+    "unauth_ratio": "Part des réponses 401/403"
+  },
+  "feature_mean": {
+    "req_rate": 6.5764,
+    "latency_p95": 0.1215,
+    "client_4xx_ratio": 0.0446,
+    "pool_saturation": 0.021,
+    "pool_timeouts_rate": 0.0042,
+    "container_cpu": 0.0875,
+    "container_mem_mib": 89.0039,
+    "host_cpu": 0.4404,
+    "ip_distinct": 33.0786,
+    "ip_top_share": 0.2235,
+    "unauth_ratio": 0.0149
+  },
+  "train_score_quantiles": {
+    "0.5": 0.0,
+    "0.95": 0.227,
+    "0.99": 0.319,
+    "1.0": 0.5
+  },
+  "evaluation": {
+    "threshold": 0.5,
+    "false_alert_episodes": 0,
+    "normal_episodes": 3,
+    "detected_attacks": 5,
+    "attack_episodes": 5,
+    "median_delay_s": 10.0,
+    "max_delay_s": 10.0
+  }
+}

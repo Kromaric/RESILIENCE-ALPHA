@@ -1,0 +1,11 @@
+# Pipeline hors ligne (collecte, entraînement, évaluation, génération de trafic)
+# scikit-learn : MÊME version que services/detector-ml/pyproject.toml (modèle joblib)
+scikit-learn==1.9.1
+numpy>=2.0
+pandas>=2.2
+joblib>=1.4
+httpx>=0.27
+matplotlib>=3.8
+tabulate>=0.9
+locust>=2.30
+pytest>=8

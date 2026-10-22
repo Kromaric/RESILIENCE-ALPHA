@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+# detector-ml (CADRAGE §4.5) — contexte de build : racine du dépôt
+#   docker build -f dockerfiles/Dockerfile-detector -t orbe/detector-ml .
+# Le modèle n'est pas dans l'image : ml/models/ est monté en lecture seule sur /models.
+
+FROM python:3.12-slim AS build
+WORKDIR /src
+COPY services/detector-ml/pyproject.toml ./
+COPY services/detector-ml/app ./app
+COPY ml/anomaly ./anomaly
+RUN pip install --no-cache-dir --prefix=/install .
+
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin orbe
+COPY --from=build /install /usr/local
+USER 10001
+EXPOSE 8004
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8004/health/live', timeout=2)"]
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8004", \
+     "--no-access-log", "--no-server-header"]

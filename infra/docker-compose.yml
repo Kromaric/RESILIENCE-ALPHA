@@ -8,6 +8,7 @@ services:
     container_name: prometheus
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus-rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -54,7 +55,7 @@ services:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: cadvisor
     ports:
-      - "8088:8080"
+      - "8080:8080"
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -198,6 +199,27 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 128m
+    restart: unless-stopped
+
+  detector-ml:
+    build:
+      context: ..
+      dockerfile: ./dockerfiles/Dockerfile-detector
+    container_name: detector-ml
+    environment:
+      DETECTOR_PROMETHEUS_URL: http://prometheus:9090
+      DETECTOR_LOKI_URL: http://loki:3100
+    volumes:
+      - ../ml/models:/models:ro   # modèle produit par ml/train.py + ml/evaluate.py
+    depends_on: [prometheus, loki]
+    expose:
+      - "8004"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 0.5
     restart: unless-stopped
 
   mariadb:

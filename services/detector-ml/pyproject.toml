@@ -1,0 +1,45 @@
+[project]
+name = "orbe-detector-ml"
+version = "0.1.0"
+description = "RESILIENCE-ALPHA — détection d'anomalies (IsolationForest) sur Prometheus + Loki"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30",
+    "pydantic-settings>=2.4",
+    "httpx>=0.27",
+    "prometheus-client>=0.20",
+    "numpy>=2.0",
+    # même version qu'à l'entraînement (ml/requirements.txt) : le modèle joblib en dépend
+    "scikit-learn==1.9.1",
+    "joblib>=1.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+# `anomaly` = ml/anomaly (code partagé avec l'entraînement), copié par le Dockerfile ;
+# en local : `pip install -e .` puis PYTHONPATH=../../ml
+[tool.setuptools.packages.find]
+include = ["app*", "anomaly*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "../../ml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "anomaly"]
