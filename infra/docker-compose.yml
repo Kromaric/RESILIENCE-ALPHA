@@ -197,7 +197,7 @@ services:
       BO_VAULT_ADDR: http://vault:8200
       BO_VAULT_KV_PATH: secret/data/oorbe/config
       BO_VAULT_TOKEN_FILE: /run/secrets/oorbe_vault_token
-    secrets: [jwt_public_key, bo_db_password, oorbe_vault_token]
+    secrets: [jwt_public_key, bo_db_password, oorbe_vault_token, rag_api_key]
     depends_on:
       - oorbe-auth-service
       - mariadb

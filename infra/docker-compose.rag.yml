@@ -33,15 +33,13 @@ services:
     volumes:
       - ../docs:/corpus:ro              # corpus : mettre à jour docs/ puis redémarrer le conteneur
       - rag-index:/data                 # index ChromaDB, reconstruit si docs/ a changé
-    networks: [rag]
+    # Réseau par défaut de la pile : bo-api le joint par son nom (http://assistant-rag:8005)
+    # et il peut sortir vers la VM Ollama.
     ports:
       - "8005:8005"
     mem_limit: 768m
     cpus: 1.0
     pids_limit: 128
-
-networks:
-  rag: {}   # non interne : doit joindre la VM Ollama sur le réseau local
 
 volumes:
   rag-index:
