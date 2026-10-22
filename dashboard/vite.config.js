@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    port: 5174,
     // La page Documentation lit les .md du dossier docs/ du dépôt (hors de dashboard/)
     fs: { allow: ['..'] },
     // En dev, /bo/* est relayé vers bo-api (docker-compose.dev.yml), comme le fera le Nginx

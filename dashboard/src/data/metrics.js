@@ -1,56 +1,83 @@
-const POINTS = 31 // une mesure par minute, 10:20 → 10:50
-const SPIKE_START = 21 // 10:41
-const PENDANT_END = 23 // 10:43, l'incident est encore en cours
+const POINTS = 31 // 30 minutes de fenêtre (une mesure par minute)
+const SPIKE_INDEX = 20 // index correspondant à l'instant de l'incident (ex: T - 10 min)
 
-const label = (i) => `10:${String(20 + i).padStart(2, '0')}`
 const noise = (i, amp) => Math.sin(i * 1.7) * amp + Math.cos(i * 0.9) * (amp / 2)
 
-// Valeurs pendant l'incident, par index de minute
-const spikes = {
-  latency: { 21: 900, 22: 2300, 23: 1800, 24: 420 },
-  anomaly: { 21: 0.62, 22: 0.94, 23: 0.86, 24: 0.3 },
-  tx: { 21: 70, 22: 25, 23: 15, 24: 32 },
-}
+export function getSeries(phase, incidentDateStr = null) {
+  const incDate = incidentDateStr ? new Date(incidentDateStr) : new Date()
+  // Démarre la fenêtre 20 minutes avant l'incident pour que le pic soit à l'index 20
+  const startTime = new Date(incDate.getTime() - SPIKE_INDEX * 60 * 1000)
 
-export function getSeries(phase) {
+  const labelAt = (index) => {
+    const d = new Date(startTime.getTime() + index * 60 * 1000)
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+
+  const spikes = {
+    latency: { [SPIKE_INDEX]: 1420, [SPIKE_INDEX + 1]: 2180, [SPIKE_INDEX + 2]: 460 },
+    anomaly: { [SPIKE_INDEX]: 0.94, [SPIKE_INDEX + 1]: 0.98, [SPIKE_INDEX + 2]: 0.28 },
+    tx: { [SPIKE_INDEX]: 38, [SPIKE_INDEX + 1]: 14, [SPIKE_INDEX + 2]: 65 },
+  }
+
   const points = Array.from({ length: POINTS }, (_, i) => {
-    const time = label(i)
-    if (phase === 'pendant' && i > PENDANT_END) return { time } // pas encore de données
-    const incident = phase !== 'avant' && i in spikes.latency
+    const time = labelAt(i)
+    if (phase === 'pendant' && i > SPIKE_INDEX + 1) return { time }
+    const isIncident = phase !== 'avant' && (i === SPIKE_INDEX || i === SPIKE_INDEX + 1)
+
     return {
       time,
-      incident,
-      latency: incident ? spikes.latency[i] : Math.round(190 + noise(i, 12)),
-      anomaly: incident ? spikes.anomaly[i] : +(0.1 + noise(i, 0.02)).toFixed(2),
-      tx: incident ? spikes.tx[i] : Math.round(120 + noise(i, 6)),
+      incident: isIncident,
+      latency: isIncident
+        ? spikes.latency[i]
+        : Math.max(10, Math.round(15 + noise(i, 4))),
+      anomaly: isIncident
+        ? spikes.anomaly[i]
+        : Math.max(0.01, +(0.04 + noise(i, 0.015)).toFixed(2)),
+      tx: isIncident
+        ? spikes.tx[i]
+        : Math.max(80, Math.round(120 + noise(i, 6))),
     }
   })
 
   const incident =
     phase === 'avant'
       ? null
-      : { x1: label(SPIKE_START), x2: label(phase === 'pendant' ? PENDANT_END : 24) }
+      : {
+          x1: labelAt(SPIKE_INDEX),
+          x2: labelAt(phase === 'pendant' ? SPIKE_INDEX + 1 : SPIKE_INDEX + 2),
+        }
 
   return { points, incident }
 }
 
+export function getDynamicResources(phase) {
+  if (phase === 'avant') {
+    return [
+      { label: 'CPU', value: '24 %', percent: 24 },
+      { label: 'Mémoire', value: '4,1 / 16 Go', percent: 26 },
+      { label: 'Disque SSD', value: '28 / 100 Go', percent: 28 },
+      { label: 'Réseau entrant', value: '1,4 Mo/s', percent: 7 },
+    ]
+  }
+  if (phase === 'pendant') {
+    return [
+      { label: 'CPU', value: '84 %', percent: 84 },
+      { label: 'Mémoire', value: '7,9 / 16 Go', percent: 49 },
+      { label: 'Disque SSD', value: '28 / 100 Go', percent: 28 },
+      { label: 'Réseau entrant', value: '17,8 Mo/s', percent: 89 },
+    ]
+  }
+  // apres ou live nominal
+  return [
+    { label: 'CPU', value: '26 %', percent: 26 },
+    { label: 'Mémoire', value: '4,3 / 16 Go', percent: 27 },
+    { label: 'Disque SSD', value: '28 / 100 Go', percent: 28 },
+    { label: 'Réseau entrant', value: '1,6 Mo/s', percent: 8 },
+  ]
+}
+
 export const resources = {
-  avant: [
-    { label: 'CPU', value: '31 %', percent: 31 },
-    { label: 'Mémoire', value: '9,8 / 16 Go', percent: 61 },
-    { label: 'Disque SSD', value: '31 / 100 Go', percent: 31 },
-    { label: 'Réseau entrant', value: '2,1 Mo/s', percent: 10 },
-  ],
-  pendant: [
-    { label: 'CPU', value: '87 %', percent: 87 },
-    { label: 'Mémoire', value: '13,1 / 16 Go', percent: 82 },
-    { label: 'Disque SSD', value: '31 / 100 Go', percent: 31 },
-    { label: 'Réseau entrant', value: '18,6 Mo/s', percent: 93 },
-  ],
-  apres: [
-    { label: 'CPU', value: '38 %', percent: 38 },
-    { label: 'Mémoire', value: '10,2 / 16 Go', percent: 64 },
-    { label: 'Disque SSD', value: '31 / 100 Go', percent: 31 },
-    { label: 'Réseau entrant', value: '2,4 Mo/s', percent: 12 },
-  ],
+  avant: getDynamicResources('avant'),
+  pendant: getDynamicResources('pendant'),
+  apres: getDynamicResources('apres'),
 }
