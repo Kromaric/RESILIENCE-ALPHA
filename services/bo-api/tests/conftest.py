@@ -8,6 +8,7 @@ Dans SQLite, `bo_clients` est une table remplie avec des valeurs déjà masquée
 lui-même est fait par la vue MariaDB (infra/mariadb/init/01-schema.sql), vérifié de bout en bout.
 """
 
+import json
 import time
 import uuid
 
@@ -107,7 +108,29 @@ class FakeAuthService:
         self.operators = {
             "ops@orbe.test": {"id": str(uuid.uuid4()), "role": "operator", "name": "Opérateur"},
             "viewer@orbe.test": {"id": str(uuid.uuid4()), "role": "viewer", "name": "Lecture"},
+            "admin@orbe.test": {"id": str(uuid.uuid4()), "role": "admin", "name": "Admin"},
         }
+        # Réponses des étapes de connexion : chemin → (code, corps, en-têtes)
+        session_id = "00000000-0000-0000-0000-000000000001"
+        self.replies = {
+            "/operators/login/identify": (
+                200,
+                {
+                    "session_id": session_id,
+                    "step": "face",
+                    "face_challenge": {"direction": "left", "frames": 12, "interval_ms": 300},
+                    "face_enrollment_required": False,
+                    "expires_in": 120,
+                },
+                {},
+            ),
+            "/operators/login/face": (
+                200,
+                {"session_id": session_id, "step": "password", "expires_in": 120},
+                {},
+            ),
+        }
+        self.calls: list[tuple[str, str, dict | None, httpx.Headers]] = []
         self.sessions: dict[str, dict] = {}  # jti → opérateur
         self.me_calls = 0
         self.down = False
@@ -142,22 +165,24 @@ class FakeAuthService:
         if self.down:
             raise httpx.ConnectError("auth-service injoignable", request=request)
         path = request.url.path
-        if path == "/operators/login":
-            self.last_login_headers = request.headers
-            body = __import__("json").loads(request.content)
-            if body["email"] not in self.operators or body["password"] != "demo-password":
+        body = json.loads(request.content) if request.content else None
+        self.calls.append((request.method, path, body, request.headers))
+        if path in self.replies:
+            status_code, payload, headers = self.replies[path]
+            return httpx.Response(status_code, json=payload, headers=headers)
+        if path == "/operators/login/password":
+            if body["password"] != "demo-password":
                 return httpx.Response(
                     401,
                     json={"detail": {"code": "invalid_credentials", "message": "Incorrect."}},
                 )
-            role = self.operators[body["email"]]["role"]
             return httpx.Response(
                 200,
                 json={
-                    "access_token": self.token(body["email"]),
+                    "access_token": self.token("ops@orbe.test"),
                     "token_type": "bearer",
                     "expires_in": 3600,
-                    "role": role,
+                    "role": "operator",
                 },
             )
         found = self._session(request)
@@ -178,8 +203,15 @@ class FakeAuthService:
                     "role": operator["role"],
                     "session_id": jti,
                     "expires_at": "2099-01-01T00:00:00Z",
+                    "factors": ["face", "pwd"],
                 },
             )
+        if path.startswith("/operators/accounts"):
+            if operator["role"] != "admin":
+                return httpx.Response(403, json={"detail": {"code": "forbidden", "message": "."}})
+            if request.method == "DELETE" and path.endswith("/sessions"):
+                return httpx.Response(204)
+            return httpx.Response(200, json={"path": path, "method": request.method, "body": body})
         return httpx.Response(404)
 
 

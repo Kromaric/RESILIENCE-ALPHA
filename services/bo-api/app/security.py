@@ -29,7 +29,7 @@ from app.metrics import UPSTREAM_ERRORS
 bearer = HTTPBearer(auto_error=False)
 logger = logging.getLogger("security")
 
-ROLES = ("viewer", "operator")  # du moins au plus privilégié
+ROLES = ("viewer", "operator", "admin")  # du moins au plus privilégié
 
 
 class TokenVerifier:
@@ -142,7 +142,7 @@ def require_role(role: str):
         if not operator.has_role(role):
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
-                detail=error("forbidden", "Action réservée au rôle « opérateur »."),
+                detail=error("forbidden", f"Action réservée au rôle « {role} »."),
             )
         return operator
 

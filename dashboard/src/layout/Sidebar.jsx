@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Activity, FileText, MessageSquare, ArrowUpRight, LogOut } from 'lucide-react'
+import { Activity, FileText, MessageSquare, ArrowUpRight, LogOut, Users } from 'lucide-react'
 import { conversations } from '../data/assistant'
 import { useAuth } from '../auth/AuthContext'
 import { useApi } from '../api/useApi'
@@ -8,7 +8,10 @@ const espace = [
   { to: '/', label: 'Supervision', icon: Activity },
   { to: '/docs', label: 'Documentation', icon: FileText },
   { to: '/assistant', label: 'Assistant RAG', icon: MessageSquare },
+  { to: '/habilitations', label: 'Habilitations', icon: Users, role: 'admin' },
 ]
+
+const ROLE_LABELS = { viewer: 'Lecture', operator: 'Opérateur', admin: 'Administrateur' }
 
 function SectionLabel({ children }) {
   return (
@@ -34,21 +37,23 @@ export default function Sidebar() {
 
       <SectionLabel>Espace</SectionLabel>
       <nav className="flex flex-col gap-1">
-        {espace.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) =>
-              `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition ${
-                isActive ? 'bg-accent/15 text-accent' : 'text-gray-300 hover:bg-surface'
-              }`
-            }
-          >
-            <Icon size={16} />
-            {label}
-          </NavLink>
-        ))}
+        {espace
+          .filter(({ role }) => !role || operator.role === role)
+          .map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === '/'}
+              className={({ isActive }) =>
+                `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition ${
+                  isActive ? 'bg-accent/15 text-accent' : 'text-gray-300 hover:bg-surface'
+                }`
+              }
+            >
+              <Icon size={16} />
+              {label}
+            </NavLink>
+          ))}
       </nav>
 
       {onAssistant ? (
@@ -89,7 +94,7 @@ export default function Sidebar() {
       <div className="mt-auto flex items-center justify-between gap-2 px-1 pb-3">
         <div className="min-w-0">
           <p className="truncate text-xs text-gray-200">{operator.display_name}</p>
-          <p className="text-[11px] text-muted">{operator.role}</p>
+          <p className="text-[11px] text-muted">{ROLE_LABELS[operator.role] ?? operator.role}</p>
         </div>
         <button
           onClick={logout}

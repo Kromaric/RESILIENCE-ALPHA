@@ -43,6 +43,8 @@ def main() -> None:
     for name in PASSWORDS:
         write_once(name, secrets.token_hex(24).encode())
     write_once("probe_api_key", f"orbe_sk_probe_{secrets.token_hex(16)}".encode())
+    # Clé de l'ESP8266 (en-tête X-Device-Key de GET /devices/led), à recopier dans son firmware
+    write_once("led_device_key", f"orbe_led_{secrets.token_hex(16)}".encode())
     # Clé exigée par l'assistant opérateur (POST /ask, en-tête X-API-Key)
     write_once("rag_api_key", f"orbe_sk_rag_{secrets.token_hex(16)}".encode())
     # Jeton du proxy de la VM Ollama : recopier sa valeur dans OLLAMA_PROXY_TOKEN (infra/ollama/.env)

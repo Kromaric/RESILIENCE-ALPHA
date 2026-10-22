@@ -9,36 +9,47 @@ contrôle (remédiation, détecteur, assistant). Il n'a pas accès au socket Doc
 
 ## Connexion des opérateurs
 
-Comptes **opérateurs**, distincts des clients Orbe, mot de passe seul (pas de visage) :
+Comptes **opérateurs**, distincts des clients. Sur le poste du PC Hôte, dans l'ordre imposé :
+**identifiant → visage (caméra USB) → mot de passe**. auth-service pilote la LED de l'ESP8266 à
+chaque étape ; détail et contrat de la LED : [docs/services/back-office-connexion.md](../../docs/services/back-office-connexion.md).
 
 ```
-POST /bo/auth/login   { "email", "password" }  → { access_token, expires_in: 3600, role }
-                      puis Authorization: Bearer <access_token> sur toutes les routes
-GET  /bo/auth/me      → { operator_id, email, display_name, role }
-POST /bo/auth/logout  → 204 (session révoquée)
+POST /bo/auth/identify  { "email" }                 → { session_id, step: "face", face_challenge }
+POST /bo/auth/face      { session_id, frames }      → { step: "password" }         (LED verte clignotante)
+POST /bo/auth/password  { session_id, password }    → { access_token, expires_in: 3600, role }
+                        puis Authorization: Bearer <access_token> sur toutes les routes
+GET  /bo/auth/me        → { operator_id, email, display_name, role }
+POST /bo/auth/logout    → 204 (session révoquée)
+POST /bo/auth/enroll-face  démarrage seulement (face_enrollment_required)
 ```
+
+Pour le front : après un `401` au visage ou au mot de passe, éteindre la caméra et revenir à
+l'identifiant (vidé). `429 identification_locked` : attendre `Retry-After` secondes avant de
+réactiver la saisie.
 
 | Rôle | Droits |
 |---|---|
-| `viewer` | consultation |
-| `operator` | consultation + assistant |
+| `viewer` | indicateurs, supervision |
+| `operator` | en plus : données personnelles, assistant |
+| `admin` | en plus : habilitations (`/bo/admin/operators`) |
 
-Erreurs : `{"detail": {"code": "...", "message": "..."}}` — `invalid_credentials` (401),
-`account_locked` (423, `Retry-After`), `too_many_attempts` (429), `invalid_token` (401 : jeton
-absent, expiré ou session révoquée → retour à l'écran de connexion), `forbidden` (403),
-`<service>_unavailable` (503 : service interrogé injoignable).
+Habilitations (rôle `admin`) : `GET/POST /bo/admin/operators`, `PATCH /bo/admin/operators/{id}`
+(nom, rôle, activation), `POST …/{id}/password`, `POST …/{id}/unlock`, `DELETE …/{id}/sessions`,
+`POST …/{id}/face` (`{consent, frames}` : ~16 images, la personne devant la caméra),
+`DELETE …/{id}/face`.
+
+Erreurs : `{"detail": {"code": "...", "message": "..."}}` — `face_not_recognized`,
+`liveness_failed`, `invalid_credentials` (401), `login_step_expired` (401), `identification_locked`
+(429, `Retry-After`), `account_locked` (423), `invalid_token` (401 : retour à l'écran de connexion),
+`forbidden` (403), `last_admin` (409), `<service>_unavailable` (503).
 
 Chaque requête vérifie le jeton (signature, audience `orbe-bo`) puis la session auprès
-d'auth-service, avec un cache de 5 s : une déconnexion ou un compte désactivé est pris en
-compte en 5 s au plus. Un jeton client (application Orbe) est refusé, et un jeton opérateur
-n'est pas accepté par payment-service.
+d'auth-service, avec un cache de 5 s. Un jeton client (application Orbe) est refusé, et un jeton
+opérateur n'est pas accepté par payment-service.
 
-Comptes de démo (pile de dev) : `ops@orbe.test` (operator) et `viewer@orbe.test` (viewer), mot
-de passe `demo-password`. Créer un compte :
-
-```bash
-services/auth-service/.venv/Scripts/python scripts/create_operator.py prenom@orbe.test --name "Prénom Nom" --role operator
-```
+Comptes de démo (pile de dev) : `admin@orbe.test` (admin), `ops@orbe.test` (operator),
+`viewer@orbe.test` (viewer), mot de passe `demo-password`, sans visage : `admin` enregistre d'abord le
+sien (démarrage), puis ceux des autres depuis les habilitations.
 
 ## Brancher le dashboard (pour le front)
 
