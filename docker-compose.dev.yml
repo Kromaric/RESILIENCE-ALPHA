@@ -65,7 +65,7 @@ services:
       AUTH_FACE_ENGINE: insightface
       AUTH_ENABLE_DOCS: "true"
       AUTH_LOG_LEVEL: INFO
-    secrets: [auth_db_password, jwt_private_key, face_embedding_key]
+    secrets: [auth_db_password, jwt_private_key, face_embedding_key, led_device_key]
     volumes:
       - ./services/auth-service/app:/opt/venv/lib/python3.12/site-packages/app:ro
     depends_on:
@@ -178,6 +178,7 @@ secrets:
   bo_db_password:          { file: ./secrets/bo_db_password }
   grafana_admin_password:  { file: ./secrets/grafana_admin_password }
   probe_api_key:           { file: ./secrets/probe_api_key }
+  led_device_key:          { file: ./secrets/led_device_key }   # ESP8266 (GET /devices/led)
   jwt_private_key:         { file: ./secrets/jwt_private_key.pem }
   jwt_public_key:          { file: ./secrets/jwt_public_key.pem }
   face_embedding_key:      { file: ./secrets/face_embedding_key }

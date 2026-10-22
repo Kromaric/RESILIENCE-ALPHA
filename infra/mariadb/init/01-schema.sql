@@ -79,28 +79,55 @@ CREATE TABLE sessions (
 ) ENGINE = InnoDB;
 
 -- --- Back-office : opérateurs du dashboard (auth-service) ----------------------------
--- Comptes distincts des clients : pas d'inscription publique, création par un
--- administrateur (scripts/create_operator.py, compte root). Mot de passe seul.
+-- Comptes distincts des clients, sans inscription publique : créés par un administrateur
+-- depuis le back-office (rôle admin) ou par scripts/create_operator.py (premier admin).
+-- Connexion : identifiant → reconnaissance faciale (caméra USB du PC Hôte) → mot de passe.
 
 CREATE TABLE operators (
     id             CHAR(36)     NOT NULL,
     email          VARCHAR(254) NOT NULL,
     display_name   VARCHAR(80)  NOT NULL,
     password_hash  VARCHAR(255) NOT NULL,              -- argon2id
-    role           ENUM ('viewer', 'operator') NOT NULL DEFAULT 'viewer',
+    role           ENUM ('viewer', 'operator', 'admin') NOT NULL DEFAULT 'viewer',
     active         BOOLEAN      NOT NULL DEFAULT TRUE,
     failed_logins  INT          NOT NULL DEFAULT 0,
     locked_until   DATETIME     NULL,
     last_login_at  DATETIME     NULL,
+    biometric_consent_at DATETIME NULL,              -- consentement de l'opérateur (RGPD art. 9)
     created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT uq_operators_email UNIQUE (email)
 ) ENGINE = InnoDB;
 
+-- Gabarits faciaux des opérateurs : mêmes règles que ceux des clients (chiffrés, liés au
+-- titulaire par « operator:<id> » en donnée authentifiée, aucune image stockée)
+CREATE TABLE operator_face_templates (
+    id             CHAR(36)      NOT NULL,
+    operator_id    CHAR(36)      NOT NULL,
+    embedding_ct   VARCHAR(4096) CHARACTER SET ascii NOT NULL,
+    embedding_dim  SMALLINT      NOT NULL DEFAULT 512,
+    model          VARCHAR(40)   NOT NULL,
+    quality_score  DECIMAL(4, 3) NOT NULL,
+    captured_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT ck_operator_face_templates_ct CHECK (
+        embedding_ct LIKE 'local:v%:%' OR embedding_ct LIKE 'vault:v%:%'
+    ),
+    CONSTRAINT fk_operator_face_templates_operator FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE,
+    INDEX ix_operator_face_templates_operator (operator_id)
+) ENGINE = InnoDB;
+
+-- Étapes de connexion : pending_face → pending_password → active. « enrollment » : première
+-- connexion d'un opérateur sans visage, limitée à l'enregistrement de son visage.
+-- operator_id NULL : identifiant inconnu (la connexion échoue au visage, sans le révéler).
 CREATE TABLE operator_sessions (
     id                 CHAR(36)     NOT NULL,          -- = jti du JWT (audience orbe-bo)
-    operator_id        CHAR(36)     NOT NULL,
-    status             ENUM ('active', 'revoked', 'expired') NOT NULL,
+    operator_id        CHAR(36)     NULL,
+    status             ENUM ('pending_face', 'pending_password', 'enrollment', 'active', 'revoked', 'expired') NOT NULL,
+    factors            VARCHAR(40)  NOT NULL DEFAULT '',  -- « face,pwd » une fois connecté
+    challenge          VARCHAR(16)  NULL,              -- consigne du test du vivant : left | right
+    face_template_id   CHAR(36)     NULL,
+    face_score         DECIMAL(4, 3) NULL,
     ip_address         VARCHAR(45)  NULL,
     opened_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     expires_at         DATETIME(3)  NOT NULL,
@@ -108,6 +135,7 @@ CREATE TABLE operator_sessions (
     revocation_reason  VARCHAR(64)  NULL,
     PRIMARY KEY (id),
     CONSTRAINT fk_operator_sessions_operator FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE,
+    CONSTRAINT fk_operator_sessions_face_template FOREIGN KEY (face_template_id) REFERENCES operator_face_templates (id) ON DELETE SET NULL,
     INDEX ix_operator_sessions_operator (operator_id, status)
 ) ENGINE = InnoDB;
 

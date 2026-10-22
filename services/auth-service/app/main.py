@@ -12,15 +12,17 @@ from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from app import led
 from app.config import Settings
 from app.db import make_engine
 from app.face.cipher import LocalCipher, VaultTransitCipher
 from app.face.engine import FakeFaceEngine, InsightFaceEngine
 from app.logging_setup import configure_logging, log_event, request_id_var
 from app.ratelimit import SlidingWindowLimiter
-from app.routes import auth, face, health, operators
+from app.routes import auth, face, health, operator_admin, operators
 from app.routes.auth import client_ip
 from app.security import PasswordVerifier, TokenService
+from app.vault import SecretNotFound
 
 logger = logging.getLogger("http")
 QUIET_PATHS = {"/metrics", "/health/live", "/health/ready"}
@@ -92,6 +94,13 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
         audience=settings.bo_jwt_audience,
         ttl=settings.bo_jwt_ttl_seconds,
     )
+    app.state.led = led.LedController(settings.led_blink_period_ms)
+    try:
+        app.state.led_device_key = settings.secret(
+            settings.led_device_key_name, settings.led_device_key_file
+        )
+    except SecretNotFound:
+        app.state.led_device_key = None  # GET /devices/led refuse alors toute demande
     app.state.passwords = PasswordVerifier(settings.hash_concurrency)
     app.state.login_limiter = SlidingWindowLimiter(settings.login_rate_per_ip)
     app.state.register_limiter = SlidingWindowLimiter(settings.register_rate_per_ip)
@@ -160,6 +169,8 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
     app.include_router(auth.router)
     app.include_router(face.router)
     app.include_router(operators.router)
+    app.include_router(operator_admin.router)
+    app.include_router(led.router)
     app.include_router(health.router)
 
     Instrumentator(excluded_handlers=["/metrics", "/health/.*"]).instrument(app).expose(

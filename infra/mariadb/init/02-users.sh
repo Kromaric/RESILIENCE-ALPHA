@@ -40,9 +40,12 @@ run_sql <<-EOSQL
 	GRANT SELECT ON orbe.client_apis TO 'auth_svc'@'%';
 	GRANT SELECT, INSERT, DELETE ON orbe.client_face_templates TO 'auth_svc'@'%';
 	GRANT SELECT, INSERT, UPDATE ON orbe.sessions TO 'auth_svc'@'%';
-	-- opérateurs du back-office : lecture et blocage seulement, jamais de création ni de changement de rôle
+	-- opérateurs du back-office : gestion des habilitations par les administrateurs (rôle admin,
+	-- session confirmée par le visage) ; pas de suppression de compte (désactivation seulement)
 	GRANT SELECT ON orbe.operators TO 'auth_svc'@'%';
-	GRANT UPDATE (failed_logins, locked_until, last_login_at) ON orbe.operators TO 'auth_svc'@'%';
+	GRANT INSERT (id, email, display_name, password_hash, role) ON orbe.operators TO 'auth_svc'@'%';
+	GRANT UPDATE (failed_logins, locked_until, last_login_at, biometric_consent_at, display_name, role, active, password_hash) ON orbe.operators TO 'auth_svc'@'%';
+	GRANT SELECT, INSERT, DELETE ON orbe.operator_face_templates TO 'auth_svc'@'%';
 	GRANT SELECT, INSERT, UPDATE ON orbe.operator_sessions TO 'auth_svc'@'%';
 
 	CREATE USER IF NOT EXISTS 'payment_svc'@'%' IDENTIFIED BY '${PAYMENT_SVC_PASSWORD}';

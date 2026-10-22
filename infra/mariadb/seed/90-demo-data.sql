@@ -14,8 +14,10 @@ INSERT INTO clients (id, email, phone, display_name, password_hash, is_probe) VA
     ('99999999-9999-9999-9999-999999999901', 'probe@orbe.test',           '+33600000001', 'Sonde payeur',       @pwd, TRUE),
     ('99999999-9999-9999-9999-999999999902', 'probe-recipient@orbe.test', '+33600000002', 'Sonde bénéficiaire', @pwd, TRUE);
 
--- opérateurs du back-office (dashboard), même mot de passe de démo
+-- opérateurs du back-office (dashboard), même mot de passe de démo ; sans visage : la
+-- première connexion se termine par l'enregistrement du visage
 INSERT INTO operators (id, email, display_name, password_hash, role) VALUES
+    ('aaaaaaaa-0000-0000-0000-000000000003', 'admin@orbe.test',  'Administrateur',  @pwd, 'admin'),
     ('aaaaaaaa-0000-0000-0000-000000000001', 'ops@orbe.test',    'Opérateur SOC',   @pwd, 'operator'),
     ('aaaaaaaa-0000-0000-0000-000000000002', 'viewer@orbe.test', 'Lecture seule',   @pwd, 'viewer');
 

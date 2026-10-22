@@ -465,6 +465,129 @@ window.ORBE_SPECS = {
      ]
     }
    },
+   "/face/challenge": {
+    "get": {
+     "tags": [
+      "Visage"
+     ],
+     "summary": "Obtenir une consigne de test du vivant pour vérification biométrique",
+     "description": "Consigne tirée par le serveur et mémorisée dans la session : `POST /face/verify` ne\nl'accepte qu'une fois. Un client ne peut donc pas choisir le sens de rotation.",
+     "operationId": "get_face_challenge_face_challenge_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/FaceChallenge"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session sans visage alors que le compte en a un",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/face/verify": {
+    "post": {
+     "tags": [
+      "Visage"
+     ],
+     "summary": "Vérifier le visage et élever la session en authentification forte (2FA)",
+     "operationId": "verify_face_face_verify_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FaceVerifyRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/FaceVerifyResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Visage non reconnu ou test du vivant échoué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Session sans visage alors que le compte en a un",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Images invalides ou visage non détecté",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Reconnaissance faciale indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
    "/face/enroll": {
     "post": {
      "tags": [
@@ -542,19 +665,19 @@ window.ORBE_SPECS = {
      ]
     }
    },
-   "/operators/login": {
+   "/operators/login/identify": {
     "post": {
      "tags": [
       "Back-office"
      ],
-     "summary": "Connexion d'un opérateur",
-     "description": "Mêmes protections que la connexion client : 5 échecs → compte bloqué 10 min,\n20 tentatives par minute et par IP. Pas de reconnaissance faciale.",
-     "operationId": "login_operators_login_post",
+     "summary": "Connexion — 1. identifiant",
+     "description": "Démarre la connexion et renvoie la consigne de la caméra (tourner la tête). Bloqué\n30 s après un visage non reconnu (`429 identification_locked`, en-tête Retry-After).",
+     "operationId": "identify_operators_login_identify_post",
      "requestBody": {
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/LoginRequest"
+         "$ref": "#/components/schemas/OperatorIdentifyRequest"
         }
        }
       },
@@ -566,17 +689,7 @@ window.ORBE_SPECS = {
        "content": {
         "application/json": {
          "schema": {
-          "$ref": "#/components/schemas/OperatorTokenResponse"
-         }
-        }
-       }
-      },
-      "401": {
-       "description": "Identifiants invalides ou compte désactivé",
-       "content": {
-        "application/json": {
-         "schema": {
-          "$ref": "#/components/schemas/ErrorOut"
+          "$ref": "#/components/schemas/OperatorLoginStep"
          }
         }
        }
@@ -592,7 +705,7 @@ window.ORBE_SPECS = {
        }
       },
       "429": {
-       "description": "Trop de tentatives depuis cette IP",
+       "description": "Identification bloquée ou trop de tentatives",
        "content": {
         "application/json": {
          "schema": {
@@ -612,6 +725,177 @@ window.ORBE_SPECS = {
        }
       }
      }
+    }
+   },
+   "/operators/login/face": {
+    "post": {
+     "tags": [
+      "Back-office"
+     ],
+     "summary": "Connexion — 2. reconnaissance faciale (caméra USB)",
+     "description": "Reconnu : LED verte clignotante jusqu'au mot de passe. Non reconnu : LED rouge fixe\n30 s, identification bloquée 30 s, la caméra peut être éteinte.",
+     "operationId": "login_face_operators_login_face_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OperatorFaceRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/OperatorLoginStep"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Visage non reconnu ou étape expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Images invalides",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "Reconnaissance faciale indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/operators/login/password": {
+    "post": {
+     "tags": [
+      "Back-office"
+     ],
+     "summary": "Connexion — 3. mot de passe",
+     "description": "Correct : LED verte fixe 30 s et jeton du back-office. Faux : LED rouge clignotante\n10 fois, la connexion recommence à l'identifiant.",
+     "operationId": "login_password_operators_login_password_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OperatorPasswordRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/OperatorTokenResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Mot de passe faux ou étape expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/operators/me/face": {
+    "post": {
+     "tags": [
+      "Back-office"
+     ],
+     "summary": "Première connexion : enregistrer mon visage",
+     "description": "Réservé au jeton de première connexion (`face_enrollment_required`), au démarrage\nseulement. La session est ensuite fermée : l'opérateur se reconnecte avec son visage.",
+     "operationId": "enroll_me_operators_me_face_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FaceEnrollRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/FaceStatus"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton d'enrôlement absent ou expiré",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Consentement absent ou visage non détecté",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
     }
    },
    "/operators/logout": {
@@ -677,6 +961,681 @@ window.ORBE_SPECS = {
        "HTTPBearer": []
       }
      ]
+    }
+   },
+   "/operators/accounts": {
+    "get": {
+     "tags": [
+      "Back-office — habilitations"
+     ],
+     "summary": "Opérateurs",
+     "operationId": "list_accounts_operators_accounts_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "items": {
+           "$ref": "#/components/schemas/OperatorAccount"
+          },
+          "type": "array",
+          "title": "Response List Accounts Operators Accounts Get"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    },
+    "post": {
+     "tags": [
+      "Back-office — habilitations"
+     ],
+     "summary": "Créer un opérateur",
+     "description": "Le visage s'enregistre ensuite, la personne devant la caméra (`POST …/{id}/face`).",
+     "operationId": "create_account_operators_accounts_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OperatorCreate"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/OperatorAccount"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "409": {
+       "description": "Email déjà utilisé",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Email ou mot de passe invalide",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/operators/accounts/{operator_id}": {
+    "patch": {
+     "tags": [
+      "Back-office — habilitations"
+     ],
+     "summary": "Modifier le nom, le rôle ou l'activation",
+     "description": "Désactiver un compte révoque ses sessions ; un changement de rôle s'applique dès la\nrequête suivante (bo-api relit le rôle auprès d'auth-service).",
+     "operationId": "update_account_operators_accounts__operator_id__patch",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "requestBody": {
+      "required": true,
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OperatorUpdate"
+        }
+       }
+      }
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/OperatorAccount"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "409": {
+       "description": "Dernier admin",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/operators/accounts/{operator_id}/password": {
+    "post": {
+     "tags": [
+      "Back-office — habilitations"
+     ],
+     "summary": "Définir un nouveau mot de passe",
+     "description": "Révoque les sessions de l'opérateur et lève un éventuel blocage.",
+     "operationId": "reset_password_operators_accounts__operator_id__password_post",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "requestBody": {
+      "required": true,
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OperatorPasswordReset"
+        }
+       }
+      }
+     },
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Trop faible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/operators/accounts/{operator_id}/unlock": {
+    "post": {
+     "tags": [
+      "Back-office — habilitations"
+     ],
+     "summary": "Débloquer un compte (après 5 échecs)",
+     "operationId": "unlock_operators_accounts__operator_id__unlock_post",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/OperatorAccount"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/operators/accounts/{operator_id}/sessions": {
+    "delete": {
+     "tags": [
+      "Back-office — habilitations"
+     ],
+     "summary": "Révoquer toutes les sessions d'un opérateur",
+     "operationId": "revoke_sessions_operators_accounts__operator_id__sessions_delete",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/operators/accounts/{operator_id}/face": {
+    "post": {
+     "tags": [
+      "Back-office — habilitations"
+     ],
+     "summary": "Enregistrer (ou remplacer) le visage d'un opérateur",
+     "description": "L'opérateur est devant la caméra USB du poste et a donné son consentement explicite\n(case à cocher). ~16 images, tête qui balaie lentement de gauche à droite.",
+     "operationId": "enroll_face_operators_accounts__operator_id__face_post",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "requestBody": {
+      "required": true,
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FaceEnrollRequest"
+        }
+       }
+      }
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/OperatorAccount"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Consentement absent ou visage non détecté",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     }
+    },
+    "delete": {
+     "tags": [
+      "Back-office — habilitations"
+     ],
+     "summary": "Effacer le visage d'un opérateur (droit à l'effacement)",
+     "description": "Sans visage, l'opérateur ne peut plus se connecter : ses sessions sont révoquées.",
+     "operationId": "erase_face_operators_accounts__operator_id__face_delete",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/OperatorAccount"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Session invalide ou expirée",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/devices/led": {
+    "get": {
+     "tags": [
+      "Objet connecté"
+     ],
+     "summary": "État de la LED du poste back-office (ESP8266)",
+     "description": "À interroger toutes les 300 ms environ. Motifs : `off`, `green_fixed`, `red_fixed`,\n`green_blink` (période `blink_period_ms`), `red_blink` (`blinks` clignotements, puis éteinte).\n`remaining_ms` : durée restante de l'état, `null` s'il dure jusqu'au prochain changement.",
+     "operationId": "led_devices_led_get",
+     "parameters": [
+      {
+       "name": "X-Device-Key",
+       "in": "header",
+       "required": false,
+       "schema": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "X-Device-Key"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/LedOut"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Clé d'appareil absente ou invalide",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
     }
    }
   },
@@ -830,6 +1789,16 @@ window.ORBE_SPECS = {
         }
        ],
        "title": "Consent At"
+      },
+      "token": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/TokenResponse"
+        },
+        {
+         "type": "null"
+        }
+       ]
       }
      },
      "type": "object",
@@ -840,6 +1809,62 @@ window.ORBE_SPECS = {
       "consent_at"
      ],
      "title": "FaceStatus"
+    },
+    "FaceVerifyRequest": {
+     "properties": {
+      "frames": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "maxItems": 20,
+       "minItems": 1,
+       "title": "Frames",
+       "description": "Images JPEG encodées en base64, capturées par la caméra du navigateur"
+      },
+      "direction": {
+       "anyOf": [
+        {
+         "type": "string",
+         "enum": [
+          "left",
+          "right"
+         ]
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Direction"
+      }
+     },
+     "type": "object",
+     "required": [
+      "frames"
+     ],
+     "title": "FaceVerifyRequest"
+    },
+    "FaceVerifyResponse": {
+     "properties": {
+      "verified": {
+       "type": "boolean",
+       "title": "Verified"
+      },
+      "confidence": {
+       "type": "number",
+       "title": "Confidence"
+      },
+      "token": {
+       "$ref": "#/components/schemas/TokenResponse"
+      }
+     },
+     "type": "object",
+     "required": [
+      "verified",
+      "confidence",
+      "token"
+     ],
+     "title": "FaceVerifyResponse"
     },
     "HTTPValidationError": {
      "properties": {
@@ -853,6 +1878,60 @@ window.ORBE_SPECS = {
      },
      "type": "object",
      "title": "HTTPValidationError"
+    },
+    "LedOut": {
+     "properties": {
+      "state": {
+       "type": "string",
+       "enum": [
+        "off",
+        "green_blink",
+        "green_fixed",
+        "red_blink",
+        "red_fixed"
+       ],
+       "title": "State"
+      },
+      "seq": {
+       "type": "integer",
+       "title": "Seq"
+      },
+      "remaining_ms": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Remaining Ms"
+      },
+      "blinks": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Blinks"
+      },
+      "blink_period_ms": {
+       "type": "integer",
+       "title": "Blink Period Ms"
+      }
+     },
+     "type": "object",
+     "required": [
+      "state",
+      "seq",
+      "remaining_ms",
+      "blinks",
+      "blink_period_ms"
+     ],
+     "title": "LedOut"
     },
     "LoginRequest": {
      "properties": {
@@ -967,6 +2046,230 @@ window.ORBE_SPECS = {
      ],
      "title": "MeResponse"
     },
+    "OperatorAccount": {
+     "properties": {
+      "operator_id": {
+       "type": "string",
+       "title": "Operator Id"
+      },
+      "email": {
+       "type": "string",
+       "title": "Email"
+      },
+      "display_name": {
+       "type": "string",
+       "title": "Display Name"
+      },
+      "role": {
+       "type": "string",
+       "enum": [
+        "viewer",
+        "operator",
+        "admin"
+       ],
+       "title": "Role"
+      },
+      "active": {
+       "type": "boolean",
+       "title": "Active"
+      },
+      "locked": {
+       "type": "boolean",
+       "title": "Locked"
+      },
+      "face_enrolled": {
+       "type": "boolean",
+       "title": "Face Enrolled"
+      },
+      "face_templates": {
+       "type": "integer",
+       "title": "Face Templates"
+      },
+      "biometric_consent_at": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Biometric Consent At"
+      },
+      "last_login_at": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Last Login At"
+      },
+      "created_at": {
+       "type": "string",
+       "title": "Created At"
+      },
+      "active_sessions": {
+       "type": "integer",
+       "title": "Active Sessions"
+      }
+     },
+     "type": "object",
+     "required": [
+      "operator_id",
+      "email",
+      "display_name",
+      "role",
+      "active",
+      "locked",
+      "face_enrolled",
+      "face_templates",
+      "biometric_consent_at",
+      "last_login_at",
+      "created_at",
+      "active_sessions"
+     ],
+     "title": "OperatorAccount"
+    },
+    "OperatorCreate": {
+     "properties": {
+      "email": {
+       "type": "string",
+       "maxLength": 254,
+       "minLength": 3,
+       "title": "Email"
+      },
+      "display_name": {
+       "type": "string",
+       "maxLength": 80,
+       "minLength": 2,
+       "title": "Display Name"
+      },
+      "role": {
+       "type": "string",
+       "enum": [
+        "viewer",
+        "operator",
+        "admin"
+       ],
+       "title": "Role",
+       "default": "viewer"
+      },
+      "password": {
+       "type": "string",
+       "maxLength": 128,
+       "minLength": 1,
+       "title": "Password",
+       "description": "12 caractères minimum"
+      }
+     },
+     "type": "object",
+     "required": [
+      "email",
+      "display_name",
+      "password"
+     ],
+     "title": "OperatorCreate",
+     "examples": [
+      {
+       "display_name": "Léa (SOC)",
+       "email": "lea.soc@orbe.test",
+       "password": "un-mot-de-passe-solide",
+       "role": "operator"
+      }
+     ]
+    },
+    "OperatorFaceRequest": {
+     "properties": {
+      "session_id": {
+       "type": "string",
+       "maxLength": 36,
+       "minLength": 36,
+       "title": "Session Id"
+      },
+      "frames": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "maxItems": 20,
+       "minItems": 1,
+       "title": "Frames",
+       "description": "Images JPEG encodées en base64, capturées par la caméra du navigateur"
+      }
+     },
+     "type": "object",
+     "required": [
+      "session_id",
+      "frames"
+     ],
+     "title": "OperatorFaceRequest"
+    },
+    "OperatorIdentifyRequest": {
+     "properties": {
+      "email": {
+       "type": "string",
+       "maxLength": 254,
+       "minLength": 3,
+       "title": "Email"
+      }
+     },
+     "type": "object",
+     "required": [
+      "email"
+     ],
+     "title": "OperatorIdentifyRequest",
+     "examples": [
+      {
+       "email": "ops@orbe.test"
+      }
+     ]
+    },
+    "OperatorLoginStep": {
+     "properties": {
+      "session_id": {
+       "type": "string",
+       "title": "Session Id"
+      },
+      "step": {
+       "type": "string",
+       "enum": [
+        "face",
+        "password"
+       ],
+       "title": "Step"
+      },
+      "face_challenge": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/FaceChallenge"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "face_enrollment_required": {
+       "type": "boolean",
+       "title": "Face Enrollment Required",
+       "default": false
+      },
+      "expires_in": {
+       "type": "integer",
+       "title": "Expires In"
+      }
+     },
+     "type": "object",
+     "required": [
+      "session_id",
+      "step",
+      "expires_in"
+     ],
+     "title": "OperatorLoginStep",
+     "description": "Étape suivante de la connexion au back-office."
+    },
     "OperatorMe": {
      "properties": {
       "operator_id": {
@@ -985,7 +2288,8 @@ window.ORBE_SPECS = {
        "type": "string",
        "enum": [
         "viewer",
-        "operator"
+        "operator",
+        "admin"
        ],
        "title": "Role"
       },
@@ -996,6 +2300,13 @@ window.ORBE_SPECS = {
       "expires_at": {
        "type": "string",
        "title": "Expires At"
+      },
+      "factors": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "title": "Factors"
       }
      },
      "type": "object",
@@ -1005,9 +2316,48 @@ window.ORBE_SPECS = {
       "display_name",
       "role",
       "session_id",
-      "expires_at"
+      "expires_at",
+      "factors"
      ],
      "title": "OperatorMe"
+    },
+    "OperatorPasswordRequest": {
+     "properties": {
+      "session_id": {
+       "type": "string",
+       "maxLength": 36,
+       "minLength": 36,
+       "title": "Session Id"
+      },
+      "password": {
+       "type": "string",
+       "maxLength": 128,
+       "minLength": 1,
+       "title": "Password"
+      }
+     },
+     "type": "object",
+     "required": [
+      "session_id",
+      "password"
+     ],
+     "title": "OperatorPasswordRequest"
+    },
+    "OperatorPasswordReset": {
+     "properties": {
+      "password": {
+       "type": "string",
+       "maxLength": 128,
+       "minLength": 1,
+       "title": "Password",
+       "description": "12 caractères minimum"
+      }
+     },
+     "type": "object",
+     "required": [
+      "password"
+     ],
+     "title": "OperatorPasswordReset"
     },
     "OperatorTokenResponse": {
      "properties": {
@@ -1029,9 +2379,15 @@ window.ORBE_SPECS = {
        "type": "string",
        "enum": [
         "viewer",
-        "operator"
+        "operator",
+        "admin"
        ],
        "title": "Role"
+      },
+      "face_enrollment_required": {
+       "type": "boolean",
+       "title": "Face Enrollment Required",
+       "default": false
       }
      },
      "type": "object",
@@ -1041,6 +2397,52 @@ window.ORBE_SPECS = {
       "role"
      ],
      "title": "OperatorTokenResponse"
+    },
+    "OperatorUpdate": {
+     "properties": {
+      "display_name": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 80,
+         "minLength": 2
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Display Name"
+      },
+      "role": {
+       "anyOf": [
+        {
+         "type": "string",
+         "enum": [
+          "viewer",
+          "operator",
+          "admin"
+         ]
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Role"
+      },
+      "active": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Active"
+      }
+     },
+     "type": "object",
+     "title": "OperatorUpdate"
     },
     "RegisterRequest": {
      "properties": {
@@ -1250,23 +2652,23 @@ window.ORBE_SPECS = {
   "openapi": "3.1.0",
   "info": {
    "title": "Orbe — bo-api",
-   "description": "API du back-office : alimente le dashboard de supervision (état des services, indicateurs, incidents, journaux, Grafana, assistant). **Lecture seule** : aucune route ne modifie la plateforme.\n\n- Connexion : `POST /bo/auth/login` (opérateur, mot de passe seul), puis `Authorization: Bearer <jeton>` sur toutes les autres routes.\n- Rôles : `viewer` (indicateurs agrégés) et `operator` (en plus : listes et fiches clients, opérations, demandes ; chaque consultation est journalisée).\n- Erreurs : `{\"detail\": {\"code\", \"message\"}}` ; un service interrogé indisponible renvoie `503 <service>_unavailable`.\n\nVoir CADRAGE §4.7.",
+   "description": "API du back-office : alimente le dashboard de supervision (état des services, indicateurs, incidents, journaux, Grafana, assistant). **Lecture seule** : aucune route ne modifie la plateforme, sauf la gestion des habilitations (rôle admin).\n\n- Connexion : identifiant (`POST /bo/auth/identify`), visage par la caméra USB (`POST /bo/auth/face`), mot de passe (`POST /bo/auth/password`), puis `Authorization: Bearer <jeton>` sur toutes les autres routes.\n- Rôles : `admin` (habilitations), `viewer` (indicateurs agrégés) et `operator` (en plus : listes et fiches clients, opérations, demandes ; chaque consultation est journalisée).\n- Erreurs : `{\"detail\": {\"code\", \"message\"}}` ; un service interrogé indisponible renvoie `503 <service>_unavailable`.\n\nVoir CADRAGE §4.7.",
    "version": "0.1.0"
   },
   "paths": {
-   "/bo/auth/login": {
+   "/bo/auth/identify": {
     "post": {
      "tags": [
       "Connexion"
      ],
-     "summary": "Se connecter (opérateur)",
-     "description": "Mot de passe seul. Jeton valable 1 h, à envoyer ensuite en `Authorization: Bearer`.\nAprès 5 échecs, le compte est bloqué 10 minutes.",
-     "operationId": "login_bo_auth_login_post",
+     "summary": "Connexion — 1. identifiant",
+     "description": "Renvoie la consigne de la caméra (`face_challenge`) : allumer la caméra USB, puis\n`POST /bo/auth/face`. `429 identification_locked` : attendre `Retry-After` secondes\n(visage non reconnu juste avant, LED rouge fixe).",
+     "operationId": "identify_bo_auth_identify_post",
      "requestBody": {
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/LoginRequest"
+         "$ref": "#/components/schemas/IdentifyRequest"
         }
        }
       },
@@ -1278,23 +2680,13 @@ window.ORBE_SPECS = {
        "content": {
         "application/json": {
          "schema": {
-          "$ref": "#/components/schemas/TokenResponse"
+          "$ref": "#/components/schemas/LoginStep"
          }
         }
        }
       },
       "401": {
-       "description": "Identifiants invalides",
-       "content": {
-        "application/json": {
-         "schema": {
-          "$ref": "#/components/schemas/ErrorOut"
-         }
-        }
-       }
-      },
-      "423": {
-       "description": "Compte bloqué (en-tête Retry-After)",
+       "description": "Étape échouée ou expirée : recommencer l'identifiant",
        "content": {
         "application/json": {
          "schema": {
@@ -1304,7 +2696,7 @@ window.ORBE_SPECS = {
        }
       },
       "429": {
-       "description": "Trop de tentatives (en-tête Retry-After)",
+       "description": "Identification bloquée 30 s (en-tête Retry-After)",
        "content": {
         "application/json": {
          "schema": {
@@ -1314,7 +2706,17 @@ window.ORBE_SPECS = {
        }
       },
       "503": {
-       "description": "auth-service injoignable",
+       "description": "auth-service ou reconnaissance faciale indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "423": {
+       "description": "Compte bloqué",
        "content": {
         "application/json": {
          "schema": {
@@ -1334,6 +2736,205 @@ window.ORBE_SPECS = {
        }
       }
      }
+    }
+   },
+   "/bo/auth/face": {
+    "post": {
+     "tags": [
+      "Connexion"
+     ],
+     "summary": "Connexion — 2. reconnaissance faciale",
+     "description": "`frames` : `face_challenge.frames` images toutes les `interval_ms`. Reconnu : étape\n`password` (LED verte clignotante). Non reconnu : `401`, éteindre la caméra, vider\nl'identifiant ; nouvel essai après 30 s (LED rouge fixe).",
+     "operationId": "face_bo_auth_face_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FaceRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/LoginStep"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Étape échouée ou expirée : recommencer l'identifiant",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "429": {
+       "description": "Identification bloquée 30 s (en-tête Retry-After)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "auth-service ou reconnaissance faciale indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/auth/password": {
+    "post": {
+     "tags": [
+      "Connexion"
+     ],
+     "summary": "Connexion — 3. mot de passe",
+     "description": "Correct : jeton (1 h), LED verte fixe 30 s, le back-office est disponible. Faux :\n`401`, LED rouge clignotante 10 fois, tout recommence à l'identifiant.",
+     "operationId": "password_bo_auth_password_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PasswordRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/TokenResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Étape échouée ou expirée : recommencer l'identifiant",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "429": {
+       "description": "Identification bloquée 30 s (en-tête Retry-After)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "503": {
+       "description": "auth-service ou reconnaissance faciale indisponible",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/auth/enroll-face": {
+    "post": {
+     "tags": [
+      "Connexion"
+     ],
+     "summary": "Démarrage : le premier administrateur enregistre son visage",
+     "description": "Seulement avec le jeton reçu quand `face_enrollment_required` vaut `true` (aucun\nopérateur n'a encore de visage). Ensuite, se reconnecter avec le visage.",
+     "operationId": "enroll_face_bo_auth_enroll_face_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EnrollRequest"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {}
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton d'enrôlement absent ou expiré",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
     }
    },
    "/bo/auth/logout": {
@@ -1399,6 +3000,623 @@ window.ORBE_SPECS = {
        "HTTPBearer": []
       }
      ]
+    }
+   },
+   "/bo/admin/operators": {
+    "get": {
+     "tags": [
+      "Habilitations"
+     ],
+     "summary": "Opérateurs",
+     "operationId": "list_operators_bo_admin_operators_get",
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "items": {
+           "$ref": "#/components/schemas/Account"
+          },
+          "type": "array",
+          "title": "Response List Operators Bo Admin Operators Get"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    },
+    "post": {
+     "tags": [
+      "Habilitations"
+     ],
+     "summary": "Créer",
+     "operationId": "create_operator_bo_admin_operators_post",
+     "requestBody": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountCreate"
+        }
+       }
+      },
+      "required": true
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Account"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ]
+    }
+   },
+   "/bo/admin/operators/{operator_id}": {
+    "patch": {
+     "tags": [
+      "Habilitations"
+     ],
+     "summary": "Nom, rôle, activation",
+     "operationId": "update_operator_bo_admin_operators__operator_id__patch",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "pattern": "^[0-9a-f-]{36}$",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "requestBody": {
+      "required": true,
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountUpdate"
+        }
+       }
+      }
+     },
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Account"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/admin/operators/{operator_id}/password": {
+    "post": {
+     "tags": [
+      "Habilitations"
+     ],
+     "summary": "Nouveau mot de passe",
+     "operationId": "reset_password_bo_admin_operators__operator_id__password_post",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "pattern": "^[0-9a-f-]{36}$",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "requestBody": {
+      "required": true,
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PasswordReset"
+        }
+       }
+      }
+     },
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/admin/operators/{operator_id}/unlock": {
+    "post": {
+     "tags": [
+      "Habilitations"
+     ],
+     "summary": "Débloquer",
+     "operationId": "unlock_bo_admin_operators__operator_id__unlock_post",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "pattern": "^[0-9a-f-]{36}$",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Account"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/admin/operators/{operator_id}/sessions": {
+    "delete": {
+     "tags": [
+      "Habilitations"
+     ],
+     "summary": "Révoquer ses sessions",
+     "operationId": "revoke_sessions_bo_admin_operators__operator_id__sessions_delete",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "pattern": "^[0-9a-f-]{36}$",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "responses": {
+      "204": {
+       "description": "Successful Response"
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/bo/admin/operators/{operator_id}/face": {
+    "post": {
+     "tags": [
+      "Habilitations"
+     ],
+     "summary": "Enregistrer le visage (opérateur devant la caméra, consentement)",
+     "description": "~16 images pendant que l'opérateur tourne lentement la tête de gauche à droite.",
+     "operationId": "enroll_face_bo_admin_operators__operator_id__face_post",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "pattern": "^[0-9a-f-]{36}$",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "requestBody": {
+      "required": true,
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EnrollRequest"
+        }
+       }
+      }
+     },
+     "responses": {
+      "201": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Account"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
+    },
+    "delete": {
+     "tags": [
+      "Habilitations"
+     ],
+     "summary": "Effacer le visage",
+     "operationId": "erase_face_bo_admin_operators__operator_id__face_delete",
+     "security": [
+      {
+       "HTTPBearer": []
+      }
+     ],
+     "parameters": [
+      {
+       "name": "operator_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "pattern": "^[0-9a-f-]{36}$",
+        "title": "Operator Id"
+       }
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "Successful Response",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Account"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "Jeton absent, invalide ou révoqué",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "403": {
+       "description": "Réservé au rôle « admin »",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "404": {
+       "description": "Opérateur inconnu",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorOut"
+         }
+        }
+       }
+      },
+      "422": {
+       "description": "Validation Error",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+         }
+        }
+       }
+      }
+     }
     }
    },
    "/bo/supervision/overview": {
@@ -2808,6 +5026,133 @@ window.ORBE_SPECS = {
   },
   "components": {
    "schemas": {
+    "Account": {
+     "properties": {
+      "operator_id": {
+       "type": "string",
+       "title": "Operator Id"
+      },
+      "email": {
+       "type": "string",
+       "title": "Email"
+      },
+      "display_name": {
+       "type": "string",
+       "title": "Display Name"
+      },
+      "role": {
+       "type": "string",
+       "enum": [
+        "viewer",
+        "operator",
+        "admin"
+       ],
+       "title": "Role"
+      },
+      "active": {
+       "type": "boolean",
+       "title": "Active"
+      },
+      "locked": {
+       "type": "boolean",
+       "title": "Locked"
+      },
+      "face_enrolled": {
+       "type": "boolean",
+       "title": "Face Enrolled"
+      },
+      "face_templates": {
+       "type": "integer",
+       "title": "Face Templates"
+      },
+      "biometric_consent_at": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Biometric Consent At"
+      },
+      "last_login_at": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Last Login At"
+      },
+      "created_at": {
+       "type": "string",
+       "title": "Created At"
+      },
+      "active_sessions": {
+       "type": "integer",
+       "title": "Active Sessions"
+      }
+     },
+     "type": "object",
+     "required": [
+      "operator_id",
+      "email",
+      "display_name",
+      "role",
+      "active",
+      "locked",
+      "face_enrolled",
+      "face_templates",
+      "biometric_consent_at",
+      "last_login_at",
+      "created_at",
+      "active_sessions"
+     ],
+     "title": "Account"
+    },
+    "AccountCreate": {
+     "properties": {
+      "email": {
+       "type": "string",
+       "maxLength": 254,
+       "minLength": 3,
+       "title": "Email"
+      },
+      "display_name": {
+       "type": "string",
+       "maxLength": 80,
+       "minLength": 2,
+       "title": "Display Name"
+      },
+      "role": {
+       "type": "string",
+       "enum": [
+        "viewer",
+        "operator",
+        "admin"
+       ],
+       "title": "Role",
+       "default": "viewer"
+      },
+      "password": {
+       "type": "string",
+       "maxLength": 128,
+       "minLength": 1,
+       "title": "Password",
+       "description": "12 caractères minimum"
+      }
+     },
+     "type": "object",
+     "required": [
+      "email",
+      "display_name",
+      "password"
+     ],
+     "title": "AccountCreate"
+    },
     "AccountMismatch": {
      "properties": {
       "account_id": {
@@ -2835,6 +5180,52 @@ window.ORBE_SPECS = {
       "computed_cents"
      ],
      "title": "AccountMismatch"
+    },
+    "AccountUpdate": {
+     "properties": {
+      "display_name": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 80,
+         "minLength": 2
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Display Name"
+      },
+      "role": {
+       "anyOf": [
+        {
+         "type": "string",
+         "enum": [
+          "viewer",
+          "operator",
+          "admin"
+         ]
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Role"
+      },
+      "active": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Active"
+      }
+     },
+     "type": "object",
+     "title": "AccountUpdate"
     },
     "AskRequest": {
      "properties": {
@@ -3179,6 +5570,31 @@ window.ORBE_SPECS = {
      ],
      "title": "Count"
     },
+    "EnrollRequest": {
+     "properties": {
+      "consent": {
+       "type": "boolean",
+       "title": "Consent",
+       "description": "Consentement explicite (RGPD art. 9)"
+      },
+      "frames": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "maxItems": 30,
+       "minItems": 1,
+       "title": "Frames",
+       "description": "Images JPEG en base64 de la caméra USB, prises pendant la rotation de la tête"
+      }
+     },
+     "type": "object",
+     "required": [
+      "consent",
+      "frames"
+     ],
+     "title": "EnrollRequest"
+    },
     "EntriesAnomaly": {
      "properties": {
       "reference": {
@@ -3237,6 +5653,59 @@ window.ORBE_SPECS = {
       "detail"
      ],
      "title": "ErrorOut"
+    },
+    "FaceChallenge": {
+     "properties": {
+      "direction": {
+       "type": "string",
+       "enum": [
+        "left",
+        "right"
+       ],
+       "title": "Direction"
+      },
+      "frames": {
+       "type": "integer",
+       "title": "Frames"
+      },
+      "interval_ms": {
+       "type": "integer",
+       "title": "Interval Ms"
+      }
+     },
+     "type": "object",
+     "required": [
+      "direction",
+      "frames",
+      "interval_ms"
+     ],
+     "title": "FaceChallenge"
+    },
+    "FaceRequest": {
+     "properties": {
+      "session_id": {
+       "type": "string",
+       "maxLength": 36,
+       "minLength": 36,
+       "title": "Session Id"
+      },
+      "frames": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array",
+       "maxItems": 20,
+       "minItems": 1,
+       "title": "Frames",
+       "description": "Images JPEG en base64 de la caméra USB, prises pendant la rotation de la tête"
+      }
+     },
+     "type": "object",
+     "required": [
+      "session_id",
+      "frames"
+     ],
+     "title": "FaceRequest"
     },
     "GrafanaLink": {
      "properties": {
@@ -3328,6 +5797,26 @@ window.ORBE_SPECS = {
      },
      "type": "object",
      "title": "HTTPValidationError"
+    },
+    "IdentifyRequest": {
+     "properties": {
+      "email": {
+       "type": "string",
+       "maxLength": 254,
+       "minLength": 3,
+       "title": "Email"
+      }
+     },
+     "type": "object",
+     "required": [
+      "email"
+     ],
+     "title": "IdentifyRequest",
+     "examples": [
+      {
+       "email": "ops@orbe.test"
+      }
+     ]
     },
     "IncidentWindow": {
      "properties": {
@@ -3538,33 +6027,47 @@ window.ORBE_SPECS = {
      ],
      "title": "LogLine"
     },
-    "LoginRequest": {
+    "LoginStep": {
      "properties": {
-      "email": {
+      "session_id": {
        "type": "string",
-       "maxLength": 254,
-       "minLength": 3,
-       "title": "Email"
+       "title": "Session Id"
       },
-      "password": {
+      "step": {
        "type": "string",
-       "maxLength": 128,
-       "minLength": 1,
-       "title": "Password"
+       "enum": [
+        "face",
+        "password"
+       ],
+       "title": "Step"
+      },
+      "face_challenge": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/FaceChallenge"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "face_enrollment_required": {
+       "type": "boolean",
+       "title": "Face Enrollment Required",
+       "default": false
+      },
+      "expires_in": {
+       "type": "integer",
+       "title": "Expires In"
       }
      },
      "type": "object",
      "required": [
-      "email",
-      "password"
+      "session_id",
+      "step",
+      "expires_in"
      ],
-     "title": "LoginRequest",
-     "examples": [
-      {
-       "email": "ops@orbe.test",
-       "password": "demo-password"
-      }
-     ]
+     "title": "LoginStep"
     },
     "LogsOut": {
      "properties": {
@@ -3600,7 +6103,8 @@ window.ORBE_SPECS = {
        "type": "string",
        "enum": [
         "viewer",
-        "operator"
+        "operator",
+        "admin"
        ],
        "title": "Role"
       }
@@ -3729,6 +6233,43 @@ window.ORBE_SPECS = {
       "display_name"
      ],
      "title": "Party"
+    },
+    "PasswordRequest": {
+     "properties": {
+      "session_id": {
+       "type": "string",
+       "maxLength": 36,
+       "minLength": 36,
+       "title": "Session Id"
+      },
+      "password": {
+       "type": "string",
+       "maxLength": 128,
+       "minLength": 1,
+       "title": "Password"
+      }
+     },
+     "type": "object",
+     "required": [
+      "session_id",
+      "password"
+     ],
+     "title": "PasswordRequest"
+    },
+    "PasswordReset": {
+     "properties": {
+      "password": {
+       "type": "string",
+       "maxLength": 128,
+       "minLength": 1,
+       "title": "Password"
+      }
+     },
+     "type": "object",
+     "required": [
+      "password"
+     ],
+     "title": "PasswordReset"
     },
     "PayoutAccount": {
      "properties": {
@@ -4210,9 +6751,15 @@ window.ORBE_SPECS = {
        "type": "string",
        "enum": [
         "viewer",
-        "operator"
+        "operator",
+        "admin"
        ],
        "title": "Role"
+      },
+      "face_enrollment_required": {
+       "type": "boolean",
+       "title": "Face Enrollment Required",
+       "default": false
       }
      },
      "type": "object",
@@ -4551,7 +7098,11 @@ window.ORBE_SPECS = {
   "tags": [
    {
     "name": "Connexion",
-    "description": "Connexion des opérateurs"
+    "description": "Identifiant → visage (caméra USB) → mot de passe ; pilote la LED"
+   },
+   {
+    "name": "Habilitations",
+    "description": "Comptes, rôles et visages (rôle admin)"
    },
    {
     "name": "Supervision",
