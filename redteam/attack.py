@@ -191,36 +191,60 @@ def stats_monitor():
 # -------------------------------------------------------------------
 # Réinitialisation du WAF (Déblocage IP)
 # -------------------------------------------------------------------
-def reset_environment():
-    """Débloque le WAF et réinitialise la blocklist."""
+def reset_environment(target_url: str | None = None):
+    """Débloque le WAF et réinitialise la blocklist (localement ou à distance)."""
     print("[*] Réinitialisation de la blocklist du WAF...")
     reset_ok = False
-    try:
-        if HAS_REQUESTS:
-            r = requests.post("http://localhost:8003/reset", timeout=3)
-            reset_ok = r.status_code == 200
-        else:
-            req = urllib.request.Request("http://localhost:8003/reset", data=b"{}", headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                reset_ok = resp.status == 200
-    except Exception:
-        pass
+    success_msg = ""
 
-    try:
-        p = Path(__file__).resolve().parent.parent / "infra" / "waf" / "blocklist" / "blocklist.conf"
-        if p.exists():
-            p.write_text("# Dynamic blocklist\n", encoding="utf-8")
-            subprocess.run(["docker", "kill", "--signal=HUP", "waf"], capture_output=True, check=False)
-            reset_ok = True
-    except Exception:
-        pass
+    candidate_endpoints = []
+    if target_url:
+        cleaned_url = target_url.rstrip("/")
+        dash_url = cleaned_url.replace("payments.", "dashboard.").replace("payment.", "dashboard.")
+        candidate_endpoints.append(f"{dash_url}/api/reset")
+        candidate_endpoints.append(f"{cleaned_url}/api/reset")
+    candidate_endpoints.append("http://localhost:8003/reset")
+
+    for ep in candidate_endpoints:
+        try:
+            if HAS_REQUESTS:
+                r = requests.post(ep, timeout=4, verify=False)
+                if r.status_code == 200:
+                    reset_ok = True
+                    success_msg = f"via l'API ({ep})"
+                    break
+            else:
+                req = urllib.request.Request(ep, data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(req, timeout=4, context=SSL_CTX) as resp:
+                    if resp.status == 200:
+                        reset_ok = True
+                        success_msg = f"via l'API ({ep})"
+                        break
+        except Exception:
+            continue
+
+    if not reset_ok:
+        try:
+            p = Path(__file__).resolve().parent.parent / "infra" / "waf" / "blocklist" / "blocklist.conf"
+            if p.exists():
+                p.write_text("# Dynamic blocklist\n", encoding="utf-8")
+                res = subprocess.run(["docker", "kill", "--signal=HUP", "waf"], capture_output=True, check=False)
+                if res.returncode == 0:
+                    reset_ok = True
+                    success_msg = "via le conteneur WAF local"
+        except Exception:
+            pass
 
     if reset_ok:
-        print("[+] WAF réinitialisé avec succès : toutes les IP ont été débloquées !")
+        print(f"[+] WAF réinitialisé avec succès ({success_msg}) : toutes les IP ont été débloquées !")
         print("[+] Vous pouvez relancer l'attaque pour observer la détection et l'auto-remédiation en direct :")
-        print("    python3 redteam/attack.py --url https://payments.oorbe.fr --threads 20 --mode resource")
+        url_hint = target_url or "https://payments.oorbe.fr"
+        print(f"    python3 redteam/attack.py --url {url_hint} --threads 20 --mode resource")
     else:
-        print("[-] Impossible de réinitialiser le WAF. Assurez-vous que le conteneur 'waf' tourne.")
+        print("[-] Impossible de réinitialiser le WAF automatiquement à distance.")
+        print("    👉 Pour réinitialiser manuellement sur le serveur (via SSH / terminal du serveur) :")
+        print("       curl -X POST http://localhost:8003/reset")
+        print("       (ou : echo '# Dynamic blocklist' > infra/waf/blocklist/blocklist.conf && docker kill --signal=HUP waf)")
 
 
 # -------------------------------------------------------------------
@@ -294,7 +318,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.reset:
-        reset_environment()
+        reset_environment(args.url)
         sys.exit(0)
 
     url = args.url.rstrip("/")
