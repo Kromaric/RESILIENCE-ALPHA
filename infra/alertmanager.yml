@@ -1,0 +1,15 @@
+global:
+  resolve_timeout: 1m
+
+route:
+  receiver: 'remediation-engine'
+  group_by: ['alertname', 'target']
+  group_wait: 2s
+  group_interval: 5s
+  repeat_interval: 1m
+
+receivers:
+  - name: 'remediation-engine'
+    webhook_configs:
+      - url: 'http://remediation-engine:8003/webhook/alert'
+        send_resolved: true
