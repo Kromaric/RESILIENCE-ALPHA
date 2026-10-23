@@ -18,12 +18,20 @@ logger = logging.getLogger("upstream")
 
 
 class UpstreamDown(Exception):
-    """Service injoignable (status None) ou réponse en erreur (status HTTP)."""
+    """Service injoignable (status None) ou réponse en erreur (status HTTP).
 
-    def __init__(self, name: str, status: int | None = None) -> None:
+    `code` : code d'erreur renvoyé par le service (`{"detail": {"code": …}}`), s'il y en a un ;
+    `timeout` : le service n'a pas répondu dans le délai.
+    """
+
+    def __init__(
+        self, name: str, status: int | None = None, code: str | None = None, timeout: bool = False
+    ) -> None:
         super().__init__(name)
         self.name = name
         self.status = status
+        self.code = code
+        self.timeout = timeout
 
 
 async def _get(http: httpx.AsyncClient, name: str, url: str, **kwargs) -> httpx.Response:
@@ -134,17 +142,44 @@ class ControlPlane:
         response = await _get(self._http, "detector", f"{self._settings.detector_url}/score")
         return response.json()
 
+    def _assistant_headers(self) -> dict[str, str]:
+        """En-tête X-API-Key d'assistant-rag (lu une fois, Vault puis fichier)."""
+        if not hasattr(self, "_assistant_key"):
+            try:
+                self._assistant_key = self._settings.secret(
+                    self._settings.assistant_api_key_key, self._settings.assistant_api_key_file
+                )
+            except Exception:
+                self._assistant_key = None
+                log_event(logger, "assistant_api_key_missing", level=logging.WARNING)
+        return {"X-API-Key": self._assistant_key} if self._assistant_key else {}
+
     async def ask(self, question: str) -> dict[str, Any]:
         try:
             response = await self._http.post(
                 f"{self._settings.assistant_url}/ask",
                 json={"question": question},
+                headers=self._assistant_headers(),
                 timeout=self._settings.assistant_timeout_seconds,
             )
+        except httpx.TimeoutException:
+            UPSTREAM_ERRORS.labels(upstream="assistant").inc()
+            raise UpstreamDown("assistant", timeout=True) from None
         except httpx.HTTPError:
             UPSTREAM_ERRORS.labels(upstream="assistant").inc()
             raise UpstreamDown("assistant") from None
         if response.status_code >= 400:
             UPSTREAM_ERRORS.labels(upstream="assistant").inc()
-            raise UpstreamDown("assistant")
+            try:
+                code = response.json()["detail"]["code"]
+            except Exception:
+                code = None
+            log_event(
+                logger,
+                "assistant_error",
+                level=logging.WARNING,
+                status=response.status_code,
+                code=code,
+            )
+            raise UpstreamDown("assistant", response.status_code, code)
         return response.json()

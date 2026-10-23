@@ -94,7 +94,7 @@ export default function Assistant() {
                 </div>
               </div>
             ) : (
-              messages.map((m, i) => <ChatMessage key={i} {...m} />)
+              messages.map((m, i) => <ChatMessage key={i} message={m} />)
             )}
             {loading && (
               <div className="flex items-center gap-2 text-xs text-muted">

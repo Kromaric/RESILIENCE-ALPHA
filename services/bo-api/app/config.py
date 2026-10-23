@@ -55,7 +55,13 @@ class Settings(BaseSettings):
     prometheus_public_url: str = "http://localhost:9090"
     upstream_timeout_seconds: float = 3.0
     face_timeout_seconds: float = 30.0  # connexion : la reconnaissance faciale prend du temps
-    assistant_timeout_seconds: float = 60.0  # un LLM local peut mettre plusieurs secondes
+    # Modèle 7–8B sur CPU (VM Ollama) : jusqu'à ~2 min ; à garder au-dessus du délai de
+    # l'assistant (RAG_LLM_TIMEOUT_SECONDS, 150 s) et sous celui du WAF pour /bo/assistant/
+    assistant_timeout_seconds: float = 160.0
+    # Clé exigée par assistant-rag (en-tête X-API-Key) : Vault (clé rag_api_key) ou fichier.
+    # Absente : requête sans clé, refusée par l'assistant (erreur assistant_misconfigured).
+    assistant_api_key_key: str = "rag_api_key"
+    assistant_api_key_file: Path = Path("/run/secrets/rag_api_key")
     assistant_rate_per_operator: int = 10  # questions par minute et par opérateur
 
     # Supervision

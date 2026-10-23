@@ -32,12 +32,12 @@ export default function ChatMessage({ message }) {
         ) : (
           <>
             <div className="mt-1 space-y-2 text-sm leading-relaxed text-gray-200">
-              {message.text.split(/\n{2,}/).map((p, i) => (
+              {(message.text ?? '').split(/\n{2,}/).map((p, i) => (
                 <p key={i} className="whitespace-pre-wrap">{p}</p>
               ))}
             </div>
 
-            {message.sources.length > 0 && (
+            {message.sources?.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {message.sources.map((s, i) => {
                   const page = findPage(s.doc)

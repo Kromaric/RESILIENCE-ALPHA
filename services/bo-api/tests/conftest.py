@@ -49,6 +49,8 @@ class FakeUpstreams:
         self.answer: dict | None = None
         self.down: set[str] = set()
         self.queries: list[str] = []
+        self.assistant_keys: list[str | None] = []
+        self.assistant_error: tuple[int, str] | None = None
 
     def _value(self, query: str) -> float | None:
         for key, value in self.prom.items():
@@ -93,6 +95,10 @@ class FakeUpstreams:
             return httpx.Response(404, json={"detail": "not found"})
         if host == "assistant":
             self.queries.append(request.content.decode())
+            self.assistant_keys.append(request.headers.get("x-api-key"))
+            if self.assistant_error is not None:
+                status_code, code = self.assistant_error
+                return httpx.Response(status_code, json={"detail": {"code": code}})
             return httpx.Response(200, json=self.answer)
         return httpx.Response(404)
 
@@ -238,6 +244,8 @@ def app(tmp_path_factory, private_key, auth, upstreams):
             serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
         )
     )
+    assistant_key_file = key_file.parent / "rag_api_key"
+    assistant_key_file.write_text("cle-assistant-test")
     settings = Settings(
         jwt_public_key_file=key_file,
         auth_url=AUTH,
@@ -248,6 +256,7 @@ def app(tmp_path_factory, private_key, auth, upstreams):
         grafana_public_url="http://grafana.test:3000",
         loki_selector='{container=~"orbe-.+"}',
         assistant_rate_per_operator=3,
+        assistant_api_key_file=assistant_key_file,
         enable_docs=True,
         session_cache_seconds=60,
         page_size_max=3,

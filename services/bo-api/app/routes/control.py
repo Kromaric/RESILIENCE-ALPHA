@@ -104,8 +104,60 @@ async def ask(
     try:
         answer = await state.control_plane.ask(body.question)
     except UpstreamDown as exc:
-        raise upstream_unavailable(exc.name) from None
+        raise assistant_error(exc) from None
     return AskResponse.model_validate(answer)
+
+
+# Erreurs d'assistant-rag traduites pour l'opérateur : le dashboard affiche `message` tel quel
+ASSISTANT_ERRORS = {
+    "index_not_ready": (
+        503,
+        "L'assistant indexe la documentation ou n'arrive pas à joindre la VM Ollama. "
+        "Réessayez dans un instant.",
+        "15",
+    ),
+    "busy": (503, "L'assistant répond déjà à une autre question. Réessayez dans un instant.", "10"),
+    "llm_unavailable": (
+        503,
+        "Le modèle de langage (VM Ollama) n'a pas répondu. Réessayez dans un instant.",
+        "10",
+    ),
+    "question_too_long": (422, "Question trop longue (500 caractères au plus).", None),
+}
+
+
+def assistant_error(exc: UpstreamDown) -> HTTPException:
+    if exc.timeout:
+        return HTTPException(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=error("assistant_timeout", "L'assistant n'a pas répondu à temps."),
+        )
+    if exc.status == 401:
+        # Configuration : la clé rag_api_key de bo-api ne correspond pas à celle de l'assistant
+        return HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail=error(
+                "assistant_misconfigured",
+                "Clé d'API refusée par l'assistant : vérifier le secret rag_api_key.",
+            ),
+        )
+    if exc.code in ASSISTANT_ERRORS:
+        code, message, retry = ASSISTANT_ERRORS[exc.code]
+        return HTTPException(
+            code,
+            detail=error(f"assistant_{exc.code}", message),
+            headers={"Retry-After": retry} if retry else None,
+        )
+    if exc.status is None:
+        return HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=error(
+                "assistant_unavailable",
+                "Assistant injoignable : le conteneur assistant-rag est-il démarré ?",
+            ),
+            headers={"Retry-After": "5"},
+        )
+    return upstream_unavailable(exc.name)
 
 
 @router.get(

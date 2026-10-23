@@ -1,6 +1,7 @@
 import json
 from urllib.parse import parse_qs, urlparse
 
+import pytest
 from conftest import bearer
 
 
@@ -89,6 +90,37 @@ def test_assistant_down(client, upstreams, auth):
     )
 
     assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "assistant_unavailable"
+
+
+def test_assistant_receives_its_api_key(client, upstreams, auth):
+    upstreams.answer = {"answer": "ok", "sources": []}
+
+    client.post("/bo/assistant/ask", json={"question": "Question ?"}, headers=bearer(auth.token()))
+
+    assert upstreams.assistant_keys[-1] == "cle-assistant-test"
+
+
+@pytest.mark.parametrize(
+    "upstream,expected_status,expected_code",
+    [
+        ((503, "index_not_ready"), 503, "assistant_index_not_ready"),
+        ((503, "llm_unavailable"), 503, "assistant_llm_unavailable"),
+        ((401, "invalid_api_key"), 502, "assistant_misconfigured"),
+    ],
+)
+def test_assistant_errors_are_explained(
+    client, upstreams, auth, upstream, expected_status, expected_code
+):
+    upstreams.assistant_error = upstream
+
+    response = client.post(
+        "/bo/assistant/ask", json={"question": "Question ?"}, headers=bearer(auth.token())
+    )
+
+    assert response.status_code == expected_status
+    assert response.json()["detail"]["code"] == expected_code
+    assert response.json()["detail"]["message"]
 
 
 def test_grafana_links(client, auth):
